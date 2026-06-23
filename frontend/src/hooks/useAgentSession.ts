@@ -9,9 +9,13 @@ import { friendlyError } from "@/lib/utils";
 // these completes with an "ok" outcome, the pane should follow the route.
 const ROUTE_SETTING_TOOLS = new Set([
   "navigate",
-  "create_filing",      // lands the user on the new filing's detail page
-  "update_filing",      // lands the user on the updated filing
-  "add_checklist_item", // lands the user on the filing it added a step to
+  "create_task",   // lands the user on the new task's detail page
+  "update_task",   // lands the user on the updated task
+  "delete_task",   // returns the user to the to-do list
+  "add_subtask",   // lands the user on the task it added a step to
+  "create_event",  // lands the user on the calendar
+  "update_event",  // lands the user on the calendar
+  "delete_event",  // returns the user to the calendar
 ]);
 
 type Action =
@@ -48,7 +52,7 @@ interface State {
   appState: AppState | null;
   viewRoute: string;
   appRoute: string;        // last server-side currentRoute we observed
-  newRecordIds: string[];  // filing ids that appeared on the latest refetch (for highlight)
+  newRecordIds: string[];  // task/event ids that appeared on the latest refetch (for highlight)
   sessionError: string | null;
 }
 
@@ -105,7 +109,7 @@ function reducer(state: State, action: Action): State {
     case "RESET_FOR_NEW_CHAT":
       return {
         ...state, messages: [], isStreaming: false, sessionId: null, currentRunId: null,
-        files: [], appState: null, viewRoute: "/dashboard", appRoute: "/dashboard", newRecordIds: [], sessionError: null,
+        files: [], appState: null, viewRoute: "/home", appRoute: "/home", newRecordIds: [], sessionError: null,
       };
     case "USER_SEND":
       return {
@@ -217,11 +221,14 @@ function reducer(state: State, action: Action): State {
       return { ...state, files: [...stillPending, ...action.files] };
     }
     case "APP_STATE_LOADED": {
-      const serverRoute = action.appState.currentRoute || "/dashboard";
-      // Filings that appeared since the last snapshot — highlight them in the pane.
-      const prevIds = new Set<string>((state.appState?.filings ?? []).map((f) => f.id));
+      const serverRoute = action.appState.currentRoute || "/home";
+      // Tasks/events that appeared since the last snapshot — highlight them in the pane.
+      const prevIds = new Set<string>([
+        ...(state.appState?.tasks ?? []).map((t) => t.id),
+        ...(state.appState?.events ?? []).map((e) => e.id),
+      ]);
       const newRecordIds = state.appState
-        ? action.appState.filings.map((f) => f.id).filter((id) => !prevIds.has(id))
+        ? [...action.appState.tasks, ...action.appState.events].map((r) => r.id).filter((id) => !prevIds.has(id))
         : [];
       return {
         ...state,
@@ -242,8 +249,8 @@ function reducer(state: State, action: Action): State {
 
 const initialState: State = {
   messages: [], isStreaming: false, sessionId: null, isInitializing: true,
-  currentRunId: null, files: [], appState: null, viewRoute: "/dashboard",
-  appRoute: "/dashboard", newRecordIds: [], sessionError: null,
+  currentRunId: null, files: [], appState: null, viewRoute: "/home",
+  appRoute: "/home", newRecordIds: [], sessionError: null,
 };
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
@@ -254,14 +261,15 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: 
 }
 
 function viewLabel(appState: AppState | null, route: string): string {
-  if (!appState) return "Dashboard";
-  if (route.startsWith("/filings/")) {
-    const f = appState.filings.find((x) => x.id === route.split("/").pop());
-    return f ? `the "${f.title}" filing` : "Filings";
+  if (!appState) return "Home";
+  if (route.startsWith("/todo/")) {
+    const t = appState.tasks.find((x) => x.id === route.split("/").pop());
+    return t ? `the "${t.title}" task` : "To-Do";
   }
-  if (route === "/filings") return "Filings";
+  if (route === "/todo") return "To-Do";
+  if (route === "/calendar") return "Calendar";
   if (route === "/documents") return "Documents";
-  return "Dashboard";
+  return "Home";
 }
 
 export function useAgentSession() {
@@ -272,7 +280,7 @@ export function useAgentSession() {
   const abortRef = useRef<AbortController | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
-  const viewRouteRef = useRef<string>("/dashboard");
+  const viewRouteRef = useRef<string>("/home");
   const appStateRef = useRef<AppState | null>(null);
   const runStartRef = useRef<number>(0);
   const stepCountRef = useRef<number>(0);

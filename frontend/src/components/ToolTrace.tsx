@@ -5,8 +5,10 @@ import { MessagePart, ToolOutcome } from "@/lib/types";
 
 function runningLabel(name: string): string {
   const labels: Record<string, string> = {
-    navigate: "Navigating", create_filing: "Creating filing", update_filing: "Updating filing",
-    add_checklist_item: "Adding checklist step", list_filings: "Reviewing filings",
+    navigate: "Navigating", create_task: "Creating task", update_task: "Updating task",
+    delete_task: "Deleting task", add_subtask: "Adding subtask", list_tasks: "Reviewing tasks",
+    create_event: "Creating event", update_event: "Updating event", delete_event: "Deleting event",
+    list_events: "Reviewing events", search_documents: "Searching documents",
     list_documents: "Browsing documents",
     read_workspace_file: "Reading document", write_file: "Saving document", skill: "Loading skill",
   };
@@ -18,15 +20,17 @@ function runningLabel(name: string): string {
 function doneLabel(name: string, outcome: ToolOutcome | undefined): string {
   if (name === "skill") return "Skill loaded";  // skill loads carry no outcome by design
   if (outcome === "noop") {
-    return ({ navigate: "Needs clarification", update_filing: "No changes" } as Record<string, string>)[name] || "No change";
+    return ({ navigate: "Needs clarification", update_task: "No changes", update_event: "No changes" } as Record<string, string>)[name] || "No change";
   }
   if (outcome === "error") {
-    return ({ navigate: "Destination not found", update_filing: "Filing not found", add_checklist_item: "Filing not found", create_filing: "Couldn't create filing" } as Record<string, string>)[name] || "Couldn't complete";
+    return ({ navigate: "Destination not found", update_task: "Task not found", delete_task: "Task not found", add_subtask: "Task not found", create_task: "Couldn't create task", update_event: "Event not found", delete_event: "Event not found", create_event: "Couldn't create event", search_documents: "Search not configured" } as Record<string, string>)[name] || "Couldn't complete";
   }
   if (outcome === undefined) return "Done";
   const labels: Record<string, string> = {
-    navigate: "Navigated", create_filing: "Filing created", update_filing: "Filing updated",
-    add_checklist_item: "Checklist step added", list_filings: "Filings reviewed",
+    navigate: "Navigated", create_task: "Task created", update_task: "Task updated",
+    delete_task: "Task deleted", add_subtask: "Subtask added", list_tasks: "Tasks reviewed",
+    create_event: "Event created", update_event: "Event updated", delete_event: "Event deleted",
+    list_events: "Events reviewed", search_documents: "Documents searched",
     list_documents: "Documents listed",
     read_workspace_file: "Document read", write_file: "Document saved", skill: "Skill loaded",
   };
@@ -39,9 +43,11 @@ function toolContext(name: string, args: string | undefined): string | null {
     const p = JSON.parse(args);
     switch (name) {
       case "navigate": return p.destination || null;
-      case "create_filing": return p.title ? `${p.title}${p.type ? ` · ${p.type}` : ""}` : null;
-      case "update_filing": return p.filing || null;
-      case "add_checklist_item": return p.filing || null;
+      case "create_task": return p.title ? `${p.title}${p.priority ? ` · ${p.priority}` : ""}` : null;
+      case "update_task": case "delete_task": case "add_subtask": return p.task || null;
+      case "create_event": return p.title ? `${p.title}${p.date ? ` · ${p.date}` : ""}` : null;
+      case "update_event": case "delete_event": return p.event || null;
+      case "search_documents": return p.query || null;
       case "read_workspace_file": return p.path || "uploaded document";
       case "write_file": return p.path || null;
       case "skill": return p.name || null;

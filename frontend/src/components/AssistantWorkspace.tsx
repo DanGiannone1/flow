@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PanelLeftClose, Building2 } from "lucide-react";
+import { PanelLeftClose, Home } from "lucide-react";
 import AssistantPanel from "./AssistantPanel";
 import ArtifactCanvas from "./ArtifactCanvas";
 import WorkbenchNav from "./workbench/WorkbenchNav";
@@ -24,16 +24,16 @@ export default function AssistantWorkspace() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // When the agent navigates the host app to a place the user should see IN CONTEXT (a filing,
-  // the dashboard), bring them back to the host app. But the Documents route must NOT eject the
-  // user out of the workspace — a drafted document belongs in the canvas here. Ejecting on that
-  // was the headline UX wound (asking for a deliverable yanked you out to the host).
+  // When the agent navigates the host app to a place the user should see IN CONTEXT (a task,
+  // the home agenda, the calendar), bring them back to the host app. But the Documents route
+  // must NOT eject the user out of the workspace — a drafted document belongs in the canvas
+  // here. Ejecting on that was the headline UX wound (asking for a deliverable yanked you out).
   const prevRoute = useRef(state.viewRoute);
   useEffect(() => {
     if (state.viewRoute === prevRoute.current) return;
     const r = state.viewRoute;
     prevRoute.current = r;
-    const hostContext = r.startsWith("/filings") || r === "/dashboard";
+    const hostContext = r === "/home" || r === "/todo" || r.startsWith("/todo/") || r === "/calendar";
     if (hostContext) router.push("/");
   }, [state.viewRoute, router]);
 
@@ -43,14 +43,14 @@ export default function AssistantWorkspace() {
       <div className="ambient-orb-2 animate-blob" />
 
       <div className="relative z-10 flex h-full w-full gap-3">
-        {/* Host app shell rail — so the workspace reads as a page OF Tax Workbench, not a
+        {/* Host app shell rail — so the workspace reads as a page OF Flow, not a
             separate chatbot. Hidden on narrow viewports (the Back control covers returning). */}
         {!narrow && (
           <div className="flex h-full w-[210px] shrink-0 flex-col rounded-2xl border border-border-subtle bg-surface-1/70 backdrop-blur-2xl overflow-hidden">
             <div className="tw-appbar-brand px-4 h-14 flex items-center shrink-0 border-b border-border-subtle">
-              <div className="tw-logo"><Building2 size={16} strokeWidth={2.5} /></div>
+              <div className="tw-logo"><Home size={16} strokeWidth={2.5} /></div>
               <div className="flex flex-col leading-tight ml-2">
-                <span className="tw-appbar-title">Tax Workbench</span>
+                <span className="tw-appbar-title">Flow</span>
                 <span className="tw-appbar-sub">Assistant</span>
               </div>
             </div>
@@ -67,7 +67,7 @@ export default function AssistantWorkspace() {
                 type="button"
                 data-testid="workspace-back"
                 onClick={() => router.push("/")}
-                title="Back to the Tax Workbench app"
+                title="Back to Flow"
                 className="interactive-control inline-flex h-8 w-8 items-center justify-center rounded-lg bg-surface-2 border border-border-subtle text-text-secondary hover:text-text-primary hover:border-brand-primary transition-all"
               >
                 <PanelLeftClose size={14} strokeWidth={2.5} />

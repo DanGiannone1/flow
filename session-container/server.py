@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import taxdb
+import appdb
 from agent import AgentSession, _sse_event
 from trace_logging import setup_trace_logging, trace_event
 from tracing import setup_tracing
@@ -44,7 +44,7 @@ _default_ws = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "wor
 WORKSPACE = os.getenv("WORKSPACE", _default_ws)
 UPLOAD_MANIFEST = ".uploaded_files.json"
 _SESSION_ID_RE = re.compile(r"^[0-9a-f]{16}$")
-app = FastAPI(title="Tax Workbench Session")
+app = FastAPI(title="Flow Session")
 setup_tracing(app)
 
 def _normalize_session_id(raw_session_id: str | None) -> str:
@@ -157,7 +157,7 @@ async def create_session(request: Request) -> dict:
     session_id = _get_identifier(request)
     workspace = Path(_session_workspace(session_id))
     workspace.mkdir(parents=True, exist_ok=True)
-    taxdb.ensure_seeded(str(workspace))
+    appdb.ensure_seeded(str(workspace))
     _ensure_documents_seeded(str(workspace))
     trace_event("session", "session.created", session_id=session_id, workspace=str(workspace))
     return {"session_id": session_id, "status": "active"}
@@ -165,16 +165,17 @@ async def create_session(request: Request) -> dict:
 
 @app.get("/app/state")
 async def app_state(request: Request) -> dict:
-    """Return the full Tax Workbench application state for this session.
+    """Return the full Flow application state for this session.
 
     Source of truth is the workspace JSON the agent's tools mutate; seeds lazily
-    if missing (e.g. after a reset or orchestrator-probed restore).
+    if missing (e.g. after a reset or orchestrator-probed restore). Returns the
+    new shape: {currentRoute, tasks[], events[], routes[]}.
     """
     session_id = _get_identifier(request)
     _require_existing_session(session_id)
     workspace = _session_workspace(session_id)
     _ensure_documents_seeded(workspace)  # lazy-seed docs for restored/reset sessions
-    return taxdb.load(workspace)
+    return appdb.load(workspace)
 
 
 @app.get("/session")
@@ -327,7 +328,7 @@ async def list_files(request: Request) -> dict:
     for entry in sorted(workspace.iterdir()):
         if not entry.is_file():
             continue
-        # Never surface internal dotfiles (the .taxdb.json state store, the upload
+        # Never surface internal dotfiles (the .flowdb.json state store, the upload
         # manifest) as user artifacts — they are not files the user created or sees.
         if entry.name.startswith("."):
             continue
@@ -473,13 +474,13 @@ _SEED_DOCS_DIR = Path(__file__).parent / "seed_docs"
 
 
 def _ensure_documents_seeded(workspace: str) -> None:
-    """Seed the engagement's provided source documents into a fresh workspace.
+    """Seed the workspace's provided source documents into a fresh workspace.
 
-    These are documents the practitioner works *from* (trial balance, prior-year
-    return summary, PBC list, firm references). They are registered in the upload
-    manifest so they read as provided documents (origin 'uploaded') in the host
-    Documents view and are retrievable by the agent for analysis/QA — but NOT shown
-    as generated artifacts in the assistant canvas.
+    These are documents the user works *from* (a project brief, meeting notes, a 1:1
+    log, a short reference/SOP). They are registered in the upload manifest so they
+    read as provided documents (origin 'uploaded') in the host Documents view and are
+    retrievable by the agent for reading/summarizing — but NOT shown as generated
+    artifacts in the assistant canvas.
     """
     if not _SEED_DOCS_DIR.is_dir():
         # Fail loud (packaging error): the documents capability depends on these.

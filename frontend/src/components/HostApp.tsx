@@ -7,7 +7,7 @@ import CoPilotDock from "./CoPilotDock";
 import BespokeIcon from "./ui/BespokeIcon";
 import { useSession } from "./SessionProvider";
 
-// The host route ("/"): the Tax Workbench app is primary and full-width; the assistant
+// The host route ("/"): the Flow app is primary and full-width; the assistant
 // rides along as a collapsible docked co-pilot. Collapsed, the app gets the whole canvas
 // and the assistant becomes an unobtrusive launcher pill.
 export default function HostApp() {
@@ -77,9 +77,9 @@ export default function HostApp() {
           type="button"
           data-testid="dock-launcher"
           onClick={() => setDockOpen(true)}
-          className={`interactive-control fixed bottom-6 right-6 z-20 inline-flex items-center gap-2.5 rounded-2xl border border-border-subtle bg-surface-1/90 backdrop-blur-2xl px-4 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.45)] hover:border-brand-primary transition-all`}
+          className={`interactive-control fixed bottom-6 right-6 z-20 inline-flex items-center gap-2.5 rounded-2xl border border-border-subtle bg-surface-1/90 backdrop-blur-2xl px-4 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.12)] hover:border-brand-primary transition-all`}
         >
-          <span className={`p-1.5 rounded-lg bg-gradient-to-br from-brand-primary to-brand-warning ${agentWorking ? "agent-working" : ""}`}>
+          <span className={`p-1.5 rounded-lg bg-gradient-to-br from-brand-primary to-brand-accent ${agentWorking ? "agent-working" : ""}`}>
             <BespokeIcon icon={Sparkles} size={15} className="text-white" glowColor="rgba(255,255,255,0.4)" />
           </span>
           <span className="text-[12px] font-bold uppercase tracking-widest text-text-secondary">

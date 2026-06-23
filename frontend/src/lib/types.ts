@@ -46,26 +46,42 @@ export interface AppFile {
   has_markdown: boolean;
 }
 
-// ── Tax Workbench application state (rendered by the right-pane app) ──────────
-// The app is a flat tax-filing tracker: the only record type is a Filing.
-export interface TWChecklistItem {
+// ── Flow application state (rendered by the right-pane app) ───────────────────
+// Two record types: Tasks (a to-do board) and calendar Events.
+export type TaskStatus = "To do" | "In progress" | "Blocked" | "Done";
+export type TaskPriority = "Low" | "Medium" | "High";
+
+export interface Subtask {
   text: string;
   done: boolean;
 }
 
-export interface TWFiling {
+export interface Task {
   id: string;
   title: string;
-  type: string;
-  status: string;
-  dueDate?: string;
-  assignee?: string;
-  checklist?: TWChecklistItem[];
+  status: TaskStatus;
+  priority: TaskPriority;
+  group: string;          // free-form bucket (Work, Personal, …)
+  dueDate?: string;       // YYYY-MM-DD
+  subtasks?: Subtask[];
+  notes?: string;
   createdAt?: string;
+}
+
+// Named CalendarEvent so it never clashes with the DOM `Event` type.
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  date: string;           // YYYY-MM-DD
+  start?: string;         // 24h HH:MM
+  end?: string;           // 24h HH:MM
+  type?: string;          // Meeting | Reminder | Focus | …
+  notes?: string;
 }
 
 export interface AppState {
   currentRoute: string;
-  filings: TWFiling[];
+  tasks: Task[];
+  events: CalendarEvent[];
   routes: { path: string; title: string; keywords?: string[] }[];
 }

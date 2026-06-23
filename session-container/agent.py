@@ -4,8 +4,8 @@ Provides a streaming async generator interface for running agent turns against
 Azure OpenAI. Translates SDK session events into AG-UI protocol events.
 
 The agent operates on a per-session workspace folder. Application state (the mock
-"Tax Workbench" data) lives in a JSON doc in that workspace (see taxdb.py); the
-tax tools read and mutate it, and the frontend renders it via /app/state.
+"Flow" productivity data) lives in a JSON doc in that workspace (see appdb.py); the
+tools read and mutate it, and the frontend renders it via /app/state.
 """
 
 import asyncio
@@ -48,7 +48,7 @@ from copilot.session_events import (
     ToolExecutionStartData,
 )
 
-import taxdb
+import appdb
 
 load_dotenv()
 
@@ -76,16 +76,17 @@ def _trace(event: str, **data) -> None:
 
 
 SYSTEM_PROMPT = """\
-You are Tax Assistant, the assistant embedded in Tax Workbench — a simple app for a
-tax team to track their **filings** and draft **documents**. The app has three pages:
-Dashboard (what's due), Filings (the tax returns / estimated payments / extensions /
-provisions, each with a status, due date, assignee, and checklist), and Documents
-(letters and memos you draft). You help by acting directly on the app through tools.
+You are the assistant embedded in Flow — a simple personal-productivity app for managing
+**tasks**, a **calendar**, and **documents**. The app has these pages: Home (today's
+agenda — what's due, what's overdue, the next events), To-Do (tasks grouped into buckets,
+each with a status, priority, group, optional due date, and subtasks), Calendar (events —
+meetings, reminders, focus blocks — by day), and Documents (notes and drafts you read and
+write). You help by acting directly on the app through tools.
 
 You operate inside the user's own session. The tools you call read and mutate the
 *real* application state, and the user sees the result in the app next to this chat.
 Only claim you did something after the tool that does it has returned successfully —
-never say a record was created/updated or that you navigated unless the tool call succeeded.
+never say a record was created/updated/deleted or that you navigated unless the tool call succeeded.
 
 How you work:
 - Read the request, then take the single most direct action. Do not over-plan.
@@ -94,27 +95,29 @@ How you work:
   let `navigate` decide. If it returns AMBIGUOUS, list the candidates and ask which one.
   If NOT_FOUND, say so and list the closest options. Never claim you navigated unless the
   tool resolved a destination.
-- Filings are the core records. Use `list_filings` to review (it returns a computed
-  `overdue` flag and each filing's checklist progress), `create_filing` to add one,
-  `update_filing` to change status/assignee/due date, and `add_checklist_item` to add a step.
-- For "what's overdue", use the `overdue` flag from `list_filings` and the "[Today: …]"
+- Tasks: use `list_tasks` to review (it returns a computed `overdue` flag and each task's
+  subtask progress), `create_task` to add one, `update_task` to change status/priority/
+  group/due date, `add_subtask` to add a subtask, and `delete_task` to remove one.
+- Events: use `list_events` to review the calendar, `create_event` to schedule one (a date
+  is required), `update_event` to move or change it, and `delete_event` to remove one.
+- For "what's overdue", use the `overdue` flag from `list_tasks` and the "[Today: …]"
   context — never judge dates yourself.
-- To write or revise a document (engagement letter, memo, summary), use `write_file` — it
-  appears in Documents and opens in the artifact canvas, where the user can edit it. To read
-  an existing document first, use `list_documents` then `read_workspace_file`.
+- To write or revise a document (a brief, notes, a summary), use `write_file` — it appears
+  in Documents and opens in the artifact canvas, where the user can edit it. To read an
+  existing document first, use `list_documents` then `read_workspace_file`.
 
-The user's current view may be provided as context (e.g. "[Current view: Filings]"). Use it
+The user's current view may be provided as context (e.g. "[Current view: To-Do]"). Use it
 to resolve "here" / "this". The current date is provided as "[Today: …]".
 
 Style:
-- Be concise and professional. One or two sentences is usually enough.
-- State concretely what you did ("Created the Q3 estimated-payment filing" / "Opened the
-  Form 1120 filing" / "Drafted the engagement letter").
+- Be concise and friendly. One or two sentences is usually enough.
+- State concretely what you did ("Added the high-priority task" / "Moved the design review
+  to Thursday" / "Drafted the project brief").
 - Don't mention tools, routes, file paths, or IDs unless asked. Don't invent data the tools
   didn't return.
-- Stay in your lane: you're the Tax Workbench assistant. For clearly off-topic requests
-  (general trivia, unrelated coding), don't answer at length — briefly redirect ("I'm focused
-  on your tax workbench — want me to look at your filings or a document?").
+- Stay in your lane: you're the Flow assistant. For clearly off-topic requests (general
+  trivia, unrelated coding), don't answer at length — briefly redirect ("I'm focused on your
+  Flow workspace — want me to look at your tasks, calendar, or a document?").
 """
 
 
@@ -184,7 +187,7 @@ def _result_text(result) -> str:
 
 
 _NOOP_MARKERS = {"AMBIGUOUS", "NO_CHANGES", "NO_DOCUMENTS"}
-_ERROR_MARKERS = {"INVALID_PATH", "FILE_NOT_FOUND", "BINARY_FILE_UNSUPPORTED", "PATH_REQUIRED", "ENCODING_UNSUPPORTED", "TITLE_REQUIRED", "TEXT_REQUIRED"}
+_ERROR_MARKERS = {"INVALID_PATH", "FILE_NOT_FOUND", "BINARY_FILE_UNSUPPORTED", "PATH_REQUIRED", "ENCODING_UNSUPPORTED", "TITLE_REQUIRED", "TEXT_REQUIRED", "DATE_REQUIRED"}
 
 
 def _tool_outcome(result, success) -> str:
@@ -225,15 +228,6 @@ def _nav_candidates(result) -> list[str]:
     return [p for p in parts if p and not p.lower().startswith("ask ")][:6]
 
 
-def _normalize_assignee(raw: str) -> str:
-    """Map first-person references to the current practitioner label so the
-    assignee column never reads a literal 'me'/'myself'."""
-    a = (raw or "").strip()
-    if a.lower() in ("me", "myself", "i", "to me"):
-        return "You"
-    return a or "Unassigned"
-
-
 def _path_within_workspace(workspace: Path, candidate: Path) -> bool:
     try:
         candidate.relative_to(workspace)
@@ -272,48 +266,103 @@ class ListDocumentsParams(BaseModel):
 
 class NavigateParams(BaseModel):
     destination: str = Field(
-        description="Where to go, as the user phrased it — a page ('Filings', 'Documents', 'Dashboard') or a filing title (e.g. '2025 Federal Form 1120')."
+        description="Where to go, as the user phrased it — a page ('Home', 'To-Do', 'Calendar', 'Documents') or a task or event title (e.g. 'Draft Q3 planning doc', 'Design review')."
     )
 
 
-class ListFilingsParams(BaseModel):
+class ListTasksParams(BaseModel):
     pass
 
 
-class CreateFilingParams(BaseModel):
-    title: str = Field(description="Filing title, e.g. '2025 Federal Form 1120' or 'Q3 2026 Federal Estimated Payment'")
-    type: str = Field(default="Filing", description="Filing type, e.g. 'Federal return', 'State return', 'Estimated payment', 'Extension', 'Provision'")
+class CreateTaskParams(BaseModel):
+    title: str = Field(description="Task title, e.g. 'Draft Q3 planning doc'")
+    status: str = Field(default="", description="Status: 'To do', 'In progress', 'Blocked', or 'Done' (defaults to 'To do')")
+    priority: str = Field(default="", description="Priority: 'Low', 'Medium', or 'High' (defaults to 'Medium')")
+    group: str = Field(default="", description="Group/bucket, e.g. 'Work', 'Personal' (defaults to 'General')")
     due_date: str = Field(default="", description="Due date (YYYY-MM-DD), if known")
-    assignee: str = Field(default="", description="Assignee name, if known")
 
 
-class UpdateFilingParams(BaseModel):
-    filing: str = Field(description="Filing id or a distinctive part of its title")
-    status: str = Field(default="", description="New status: 'Not started', 'In progress', 'In review', or 'Filed'")
-    assignee: str = Field(default="", description="New assignee")
+class UpdateTaskParams(BaseModel):
+    task: str = Field(description="Task id or a distinctive part of its title")
+    status: str = Field(default="", description="New status: 'To do', 'In progress', 'Blocked', or 'Done'")
+    priority: str = Field(default="", description="New priority: 'Low', 'Medium', or 'High'")
+    group: str = Field(default="", description="New group/bucket")
     due_date: str = Field(default="", description="New due date (YYYY-MM-DD)")
 
 
-class AddChecklistItemParams(BaseModel):
-    filing: str = Field(description="Filing id or a distinctive part of its title")
-    text: str = Field(description="The checklist item to add")
+class DeleteTaskParams(BaseModel):
+    task: str = Field(description="Task id or a distinctive part of its title")
+
+
+class AddSubtaskParams(BaseModel):
+    task: str = Field(description="Task id or a distinctive part of its title")
+    text: str = Field(description="The subtask to add")
+
+
+class ListEventsParams(BaseModel):
+    pass
+
+
+class CreateEventParams(BaseModel):
+    title: str = Field(description="Event title, e.g. 'Team standup'")
+    date: str = Field(description="Event date (YYYY-MM-DD) — required")
+    start: str = Field(default="", description="Start time (24h HH:MM), if known")
+    end: str = Field(default="", description="End time (24h HH:MM), if known")
+    type: str = Field(default="", description="Event type: 'Meeting', 'Reminder', 'Focus', … (defaults to 'Meeting')")
+
+
+class UpdateEventParams(BaseModel):
+    event: str = Field(description="Event id or a distinctive part of its title")
+    title: str = Field(default="", description="New title")
+    date: str = Field(default="", description="New date (YYYY-MM-DD)")
+    start: str = Field(default="", description="New start time (24h HH:MM)")
+    end: str = Field(default="", description="New end time (24h HH:MM)")
+    type: str = Field(default="", description="New type: 'Meeting', 'Reminder', 'Focus', …")
+
+
+class DeleteEventParams(BaseModel):
+    event: str = Field(description="Event id or a distinctive part of its title")
 
 
 # ── Tool builders (closures over the session workspace) ─────────────────────
 
-def _build_tax_tools(working_dir: str) -> list:
+def _build_flow_tools(working_dir: str) -> list:
     workspace_root = Path(working_dir).resolve()
 
     def _load() -> dict:
-        return taxdb.load(str(workspace_root))
+        return appdb.load(str(workspace_root))
 
     def _save(data: dict) -> None:
-        taxdb.save(str(workspace_root), data)
+        appdb.save(str(workspace_root), data)
 
-    @define_tool(name="navigate", description="Navigate the Tax Workbench app to a page or work area.")
+    def _resolve_task_strict(data: dict, ref: str):
+        """Resolve a task ref to (task, error). Prefer exact id/title; fall back to a
+        unique substring. Returns (None, error_string) when not found / ambiguous."""
+        r = (ref or "").strip().lower()
+        exact = [t for t in data["tasks"] if t["id"].lower() == r or t["title"].lower() == r]
+        matches = exact if exact else [t for t in data["tasks"] if r in t["title"].lower()]
+        if not matches:
+            return None, f"TASK_NOT_FOUND: '{ref}'."
+        if len(matches) > 1:
+            opts = "; ".join(f"[{t['id']}] {t['title']}" for t in matches)
+            return None, f"AMBIGUOUS task '{ref}': {opts}. Ask which one."
+        return matches[0], None
+
+    def _resolve_event_strict(data: dict, ref: str):
+        r = (ref or "").strip().lower()
+        exact = [e for e in data["events"] if e["id"].lower() == r or e["title"].lower() == r]
+        matches = exact if exact else [e for e in data["events"] if r in e["title"].lower()]
+        if not matches:
+            return None, f"EVENT_NOT_FOUND: '{ref}'."
+        if len(matches) > 1:
+            opts = "; ".join(f"[{e['id']}] {e['title']}" for e in matches)
+            return None, f"AMBIGUOUS event '{ref}': {opts}. Ask which one."
+        return matches[0], None
+
+    @define_tool(name="navigate", description="Navigate the Flow app to a page, a task, or a calendar event.")
     def navigate(params: NavigateParams) -> str:
         data = _load()
-        result = taxdb.resolve_destination(data, params.destination)
+        result = appdb.resolve_destination(data, params.destination)
         if result["status"] == "resolved":
             data["currentRoute"] = result["path"]
             _save(data)
@@ -324,92 +373,183 @@ def _build_tax_tools(working_dir: str) -> list:
         opts = "; ".join(c["title"] for c in result["candidates"])
         return f"NOT_FOUND: no destination matched '{params.destination}'. Closest options: {opts}."
 
-    @define_tool(name="list_filings", description="List the tax filings (returns, estimates, extensions, provisions) with their type, status, due date, assignee, and a computed overdue flag.")
-    def list_filings(params: ListFilingsParams) -> str:
+    @define_tool(name="list_tasks", description="List the tasks with their status, priority, group, due date, a computed overdue flag, and subtask progress.")
+    def list_tasks(params: ListTasksParams) -> str:
         data = _load()
-        filings = data["filings"]
-        if not filings:
-            return "No filings yet."
+        tasks = data["tasks"]
+        if not tasks:
+            return "No tasks yet."
         from datetime import datetime, timezone
         today = datetime.now(timezone.utc).date().isoformat()
-        n_over = sum(1 for f in filings if taxdb.is_overdue(f, today))
-        lines = [f"{len(filings)} filing(s) | today={today} | overdue={n_over}:"]
-        for f in filings:
-            cl = f.get("checklist") or []
-            done = sum(1 for c in cl if c.get("done"))
+        n_over = sum(1 for t in tasks if appdb.is_overdue(t, today))
+        lines = [f"{len(tasks)} task(s) | today={today} | overdue={n_over}:"]
+        for t in tasks:
+            subs = t.get("subtasks") or []
+            done = sum(1 for s in subs if s.get("done"))
             lines.append(
-                f"- [{f['id']}] {f['title']} | type={f.get('type') or 'Filing'} | status={f['status']} | "
-                f"due={f.get('dueDate') or 'n/a'} | overdue={'yes' if taxdb.is_overdue(f, today) else 'no'} | "
-                f"assignee={f.get('assignee') or 'Unassigned'} | checklist={done}/{len(cl)}"
+                f"- [{t['id']}] {t['title']} | status={t['status']} | priority={t.get('priority') or 'Medium'} | "
+                f"group={t.get('group') or 'General'} | due={t.get('dueDate') or 'n/a'} | "
+                f"overdue={'yes' if appdb.is_overdue(t, today) else 'no'} | subtasks={done}/{len(subs)}"
             )
         return "\n".join(lines)
 
-    @define_tool(name="create_filing", description="Create a tax filing (a return, estimated payment, extension, or provision) in the tracker.")
-    def create_filing(params: CreateFilingParams) -> str:
+    @define_tool(name="create_task", description="Create a task in the to-do list.")
+    def create_task(params: CreateTaskParams) -> str:
         if not params.title.strip():
-            return "TITLE_REQUIRED: a filing needs a title."
+            return "TITLE_REQUIRED: a task needs a title."
         data = _load()
-        filing = {
-            "id": taxdb.new_id("f", data["filings"]),
+        task = {
+            "id": appdb.new_id("t", data["tasks"]),
             "title": params.title.strip(),
-            "type": params.type.strip() or "Filing",
-            "status": "Not started",
+            "status": params.status.strip() or "To do",
+            "priority": params.priority.strip() or "Medium",
+            "group": params.group.strip() or "General",
             "dueDate": params.due_date.strip(),
-            "assignee": _normalize_assignee(params.assignee),
-            "checklist": [],
-            "createdAt": taxdb._now_iso(),
+            "subtasks": [],
+            "notes": "",
+            "createdAt": appdb._now_iso(),
         }
-        data["filings"].append(filing)
-        data["currentRoute"] = taxdb.filing_route(filing["id"])
+        data["tasks"].append(task)
+        data["currentRoute"] = appdb.task_route(task["id"])
         _save(data)
         return (
-            f"CREATED filing [{filing['id']}] '{filing['title']}' ({filing['type']}), "
-            f"status {filing['status']}, due {filing['dueDate'] or 'n/a'}, assignee {filing['assignee']}."
+            f"CREATED task [{task['id']}] '{task['title']}', status {task['status']}, "
+            f"priority {task['priority']}, group {task['group']}, due {task['dueDate'] or 'n/a'}."
         )
 
-    @define_tool(name="update_filing", description="Update a filing's status, assignee, or due date.")
-    def update_filing(params: UpdateFilingParams) -> str:
+    @define_tool(name="update_task", description="Update a task's status, priority, group, or due date.")
+    def update_task(params: UpdateTaskParams) -> str:
         data = _load()
-        ref = params.filing.strip().lower()
-        # Prefer an exact id/title hit; only fall back to substring so a stray substring
-        # can't silently target the wrong filing.
-        exact = [f for f in data["filings"] if f["id"].lower() == ref or f["title"].lower() == ref]
-        matches = exact if exact else [f for f in data["filings"] if ref in f["title"].lower()]
-        if not matches:
-            return f"FILING_NOT_FOUND: '{params.filing}'."
-        if len(matches) > 1:
-            opts = "; ".join(f"[{f['id']}] {f['title']}" for f in matches)
-            return f"AMBIGUOUS filing '{params.filing}': {opts}. Ask which one."
-        f = matches[0]
+        t, err = _resolve_task_strict(data, params.task)
+        if err:
+            return err
         changed = []
         if params.status.strip():
-            f["status"] = params.status.strip()
-            changed.append(f"status={f['status']}")
-        if params.assignee.strip():
-            f["assignee"] = _normalize_assignee(params.assignee)
-            changed.append(f"assignee={f['assignee']}")
+            t["status"] = params.status.strip()
+            changed.append(f"status={t['status']}")
+        if params.priority.strip():
+            t["priority"] = params.priority.strip()
+            changed.append(f"priority={t['priority']}")
+        if params.group.strip():
+            t["group"] = params.group.strip()
+            changed.append(f"group={t['group']}")
         if params.due_date.strip():
-            f["dueDate"] = params.due_date.strip()
-            changed.append(f"due={f['dueDate']}")
+            t["dueDate"] = params.due_date.strip()
+            changed.append(f"due={t['dueDate']}")
         if not changed:
-            return "NO_CHANGES: specify a status, assignee, or due_date to update."
-        data["currentRoute"] = taxdb.filing_route(f["id"])
+            return "NO_CHANGES: specify a status, priority, group, or due_date to update."
+        data["currentRoute"] = appdb.task_route(t["id"])
         _save(data)
-        return f"UPDATED filing [{f['id']}] '{f['title']}': {', '.join(changed)}."
+        return f"UPDATED task [{t['id']}] '{t['title']}': {', '.join(changed)}."
 
-    @define_tool(name="add_checklist_item", description="Add a checklist step to a filing.")
-    def add_checklist_item(params: AddChecklistItemParams) -> str:
+    @define_tool(name="delete_task", description="Delete a task from the to-do list.")
+    def delete_task(params: DeleteTaskParams) -> str:
+        data = _load()
+        t, err = _resolve_task_strict(data, params.task)
+        if err:
+            return err
+        data["tasks"] = [x for x in data["tasks"] if x["id"] != t["id"]]
+        data["currentRoute"] = "/todo"
+        _save(data)
+        return f"DELETED task [{t['id']}] '{t['title']}'."
+
+    @define_tool(name="add_subtask", description="Add a subtask to a task.")
+    def add_subtask(params: AddSubtaskParams) -> str:
         text = params.text.strip()
         if not text:
-            return "TEXT_REQUIRED: provide the checklist item text."
+            return "TEXT_REQUIRED: provide the subtask text."
         data = _load()
-        f = taxdb.resolve_filing(data, params.filing)
-        if not f:
-            return f"FILING_NOT_FOUND: '{params.filing}'."
-        f.setdefault("checklist", []).append({"text": text, "done": False})
-        data["currentRoute"] = taxdb.filing_route(f["id"])
+        t, err = _resolve_task_strict(data, params.task)
+        if err:
+            return err
+        t.setdefault("subtasks", []).append({"text": text, "done": False})
+        data["currentRoute"] = appdb.task_route(t["id"])
         _save(data)
-        return f"ADDED checklist item to '{f['title']}': {text}."
+        return f"ADDED subtask to '{t['title']}': {text}."
+
+    @define_tool(name="list_events", description="List the calendar events with their date, time, and type.")
+    def list_events(params: ListEventsParams) -> str:
+        data = _load()
+        events = data["events"]
+        if not events:
+            return "No events yet."
+        from datetime import datetime, timezone
+        today = datetime.now(timezone.utc).date().isoformat()
+        ordered = sorted(events, key=lambda e: (e.get("date") or "", e.get("start") or ""))
+        lines = [f"{len(events)} event(s) | today={today}:"]
+        for e in ordered:
+            when = e.get("start") or "all-day"
+            if e.get("start") and e.get("end"):
+                when = f"{e['start']}-{e['end']}"
+            lines.append(
+                f"- [{e['id']}] {e['title']} | date={e.get('date') or 'n/a'} | time={when} | type={e.get('type') or 'Meeting'}"
+            )
+        return "\n".join(lines)
+
+    @define_tool(name="create_event", description="Create a calendar event (a meeting, reminder, or focus block). A date is required.")
+    def create_event(params: CreateEventParams) -> str:
+        if not params.title.strip():
+            return "TITLE_REQUIRED: an event needs a title."
+        if not params.date.strip():
+            return "DATE_REQUIRED: an event needs a date (YYYY-MM-DD)."
+        data = _load()
+        event = {
+            "id": appdb.new_id("e", data["events"]),
+            "title": params.title.strip(),
+            "date": params.date.strip(),
+            "start": params.start.strip(),
+            "end": params.end.strip(),
+            "type": params.type.strip() or "Meeting",
+            "notes": "",
+        }
+        data["events"].append(event)
+        data["currentRoute"] = appdb.event_route(event["id"])
+        _save(data)
+        when = event["start"] or "all-day"
+        if event["start"] and event["end"]:
+            when = f"{event['start']}-{event['end']}"
+        return (
+            f"CREATED event [{event['id']}] '{event['title']}' ({event['type']}) on {event['date']} at {when}."
+        )
+
+    @define_tool(name="update_event", description="Update or move a calendar event's title, date, time, or type.")
+    def update_event(params: UpdateEventParams) -> str:
+        data = _load()
+        e, err = _resolve_event_strict(data, params.event)
+        if err:
+            return err
+        changed = []
+        if params.title.strip():
+            e["title"] = params.title.strip()
+            changed.append(f"title={e['title']}")
+        if params.date.strip():
+            e["date"] = params.date.strip()
+            changed.append(f"date={e['date']}")
+        if params.start.strip():
+            e["start"] = params.start.strip()
+            changed.append(f"start={e['start']}")
+        if params.end.strip():
+            e["end"] = params.end.strip()
+            changed.append(f"end={e['end']}")
+        if params.type.strip():
+            e["type"] = params.type.strip()
+            changed.append(f"type={e['type']}")
+        if not changed:
+            return "NO_CHANGES: specify a title, date, start, end, or type to update."
+        data["currentRoute"] = appdb.event_route(e["id"])
+        _save(data)
+        return f"UPDATED event [{e['id']}] '{e['title']}': {', '.join(changed)}."
+
+    @define_tool(name="delete_event", description="Delete a calendar event.")
+    def delete_event(params: DeleteEventParams) -> str:
+        data = _load()
+        e, err = _resolve_event_strict(data, params.event)
+        if err:
+            return err
+        data["events"] = [x for x in data["events"] if x["id"] != e["id"]]
+        data["currentRoute"] = "/calendar"
+        _save(data)
+        return f"DELETED event [{e['id']}] '{e['title']}'."
 
     @define_tool(name="list_documents", description="List the documents available in the workspace (provided source documents and generated artifacts) with a one-line descriptor. Use to discover what you can read before answering document questions.")
     def list_documents(params: ListDocumentsParams) -> str:
@@ -481,7 +621,9 @@ def _build_tax_tools(working_dir: str) -> list:
         return f"WROTE {resolved.name} ({resolved.stat().st_size} bytes)."
 
     return [
-        navigate, list_filings, create_filing, update_filing, add_checklist_item,
+        navigate,
+        list_tasks, create_task, update_task, delete_task, add_subtask,
+        list_events, create_event, update_event, delete_event,
         list_documents, read_workspace_file, write_file,
     ]
 
@@ -567,7 +709,7 @@ class AgentSession:
         self._loop = asyncio.get_running_loop()
 
         skills_dir = str(Path(__file__).parent / "skills")
-        custom_tools = _build_tax_tools(self._working_dir)
+        custom_tools = _build_flow_tools(self._working_dir)
         available_tools = [t.name for t in custom_tools] + ["skill"]
 
         provider = {

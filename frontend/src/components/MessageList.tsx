@@ -16,10 +16,10 @@ interface MessageListProps {
 
 // Showcase the assistant's substantive capabilities (nav + overdue are already one-click above).
 const SUGGESTIONS = [
-  { icon: "gauge", label: "What's overdue?", description: "Review filings past their due date", prompt: "Which filings are overdue right now?" },
-  { icon: "strategy", label: "Create a filing", description: "Add a Q3 estimated payment", prompt: "Create a filing for the Q3 2026 federal estimated payment, due 2026-09-15, assigned to me." },
-  { icon: "checklist", label: "Update a filing", description: "Mark the extension filed", prompt: "Mark the federal extension as Filed." },
-  { icon: "doc", label: "Draft the engagement letter", description: "Generate and save a draft", prompt: "Draft a 2025 corporate tax engagement letter and save it as engagement-letter.md." },
+  { icon: "gauge", label: "What's overdue?", description: "Review tasks past their due date", prompt: "Which tasks are overdue right now?" },
+  { icon: "strategy", label: "Add a task", description: "Create a high-priority task", prompt: "Add a high-priority task 'Draft Q3 plan' due Friday in Work." },
+  { icon: "checklist", label: "Schedule a meeting", description: "Put it on the calendar", prompt: "Schedule a 3pm team sync tomorrow." },
+  { icon: "doc", label: "Draft a doc", description: "Generate and save a draft", prompt: "Draft a project kickoff doc and save it as kickoff.md." },
 ];
 
 function SuggestionIcon({ icon }: { icon: string }) {
@@ -78,7 +78,7 @@ export default function MessageList({ messages, onSuggestion, quickNav, onQuickN
         {messages.length === 0 ? (
           <div className="mx-auto flex min-h-[68vh] flex-col justify-center">
             <h2 className="text-3xl font-extrabold tracking-tight text-text-primary md:text-4xl">How can I help?</h2>
-            <p className="mt-4 text-lg text-text-secondary">Ask me to navigate, manage your filings, or draft a document.</p>
+            <p className="mt-4 text-lg text-text-secondary">Ask me to navigate, manage your tasks and calendar, or draft a document.</p>
 
             {onQuickNav && attention && attention.length > 0 && (
               <div className="mt-7 rounded-2xl border border-brand-warning/30 bg-brand-warning/5 p-3">
@@ -132,7 +132,7 @@ export default function MessageList({ messages, onSuggestion, quickNav, onQuickN
                     style={{ animationDelay: `${i * 40}ms` }}
                     className="interactive-chip animate-fade-in group flex flex-col items-start gap-3 rounded-2xl border border-border-subtle bg-surface-1 p-5 text-left transition hover:border-brand-primary hover:bg-surface-2"
                   >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-text-primary group-hover:bg-brand-primary group-hover:text-black transition-colors">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-text-primary group-hover:bg-brand-primary group-hover:text-white transition-colors">
                       <SuggestionIcon icon={s.icon} />
                     </div>
                     <div>
@@ -170,7 +170,7 @@ export default function MessageList({ messages, onSuggestion, quickNav, onQuickN
             bottomRef.current?.scrollIntoView({ behavior: "smooth" });
             setShowJumpToLatest(false);
           }}
-          className="interactive-control animate-fade-in fixed bottom-28 left-1/2 z-20 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-border-subtle bg-surface-2/95 px-3 py-2 text-xs text-text-primary shadow-[0_10px_30px_rgba(0,0,0,.35)] backdrop-blur md:bottom-32 md:left-auto md:right-8 md:translate-x-0"
+          className="interactive-control animate-fade-in fixed bottom-28 left-1/2 z-20 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-border-subtle bg-surface-2/95 px-3 py-2 text-xs text-text-primary shadow-[0_10px_30px_rgba(0,0,0,.12)] backdrop-blur md:bottom-32 md:left-auto md:right-8 md:translate-x-0"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           Jump to latest

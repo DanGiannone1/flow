@@ -14,7 +14,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --extra tracing --no-install-project
 
 # Copy application code
-COPY agent.py taxdb.py server.py tracing.py trace_logging.py upload_policy.py ./
+COPY agent.py appdb.py server.py tracing.py trace_logging.py upload_policy.py ./
 COPY skills/ ./skills/
 COPY seed_docs/ ./seed_docs/
 

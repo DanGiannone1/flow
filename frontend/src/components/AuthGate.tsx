@@ -55,8 +55,8 @@ export default function AuthGate({
     return (
       <div className="min-h-screen bg-app px-6 py-10 text-text-primary">
         <div className="mx-auto flex min-h-[70vh] max-w-lg items-center justify-center">
-          <div className="w-full rounded-[2rem] border border-border-subtle bg-surface-1/80 p-10 text-center shadow-[0_32px_80px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-primary/20 text-brand-warning">
+          <div className="w-full rounded-[2rem] border border-border-subtle bg-surface-1/80 p-10 text-center shadow-[0_24px_60px_rgba(0,0,0,0.1)] backdrop-blur-2xl">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-primary/20 text-brand-primary">
               <ShieldCheck size={24} />
             </div>
             <h1 className="mt-6 text-2xl font-bold uppercase tracking-[0.16em]">Checking Access</h1>
@@ -76,8 +76,8 @@ export default function AuthGate({
   return (
     <div className="min-h-screen bg-app px-6 py-10 text-text-primary">
       <div className="mx-auto flex min-h-[70vh] max-w-lg items-center justify-center">
-        <div className="w-full rounded-[2rem] border border-border-subtle bg-surface-1/80 p-10 text-center shadow-[0_32px_80px_rgba(0,0,0,0.5)] backdrop-blur-2xl">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-primary/20 text-brand-warning">
+        <div className="w-full rounded-[2rem] border border-border-subtle bg-surface-1/80 p-10 text-center shadow-[0_24px_60px_rgba(0,0,0,0.1)] backdrop-blur-2xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-primary/20 text-brand-primary">
             <ShieldCheck size={24} />
           </div>
           <h1 className="mt-6 text-2xl font-bold uppercase tracking-[0.16em]">Sign In Required</h1>
@@ -97,7 +97,7 @@ export default function AuthGate({
                 setError(friendlyError(err, "Could not start sign-in."));
               });
             }}
-            className="interactive-control mt-8 inline-flex items-center justify-center rounded-xl bg-brand-primary px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-white shadow-[0_12px_32px_rgba(217,93,57,0.35)] transition hover:bg-brand-warning"
+            className="interactive-control mt-8 inline-flex items-center justify-center rounded-xl bg-brand-primary px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-white shadow-[0_12px_32px_rgba(0,115,234,0.3)] transition hover:bg-brand-strong"
           >
             <LogIn size={14} strokeWidth={2.5} className="mr-2" />
             Sign In With Microsoft

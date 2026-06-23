@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Tax Workbench",
-  description: "Tax Workbench — AI assistant for tax practice work",
+  title: "Flow",
+  description: "Flow — AI assistant for personal productivity",
   icons: {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },

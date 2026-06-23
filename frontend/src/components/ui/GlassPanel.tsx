@@ -10,8 +10,8 @@ interface GlassPanelProps extends HTMLMotionProps<"div"> {
 }
 
 /**
- * The foundational structural atom of the Tax Workbench design system.
- * Handles espresso backgrounds, backdrop blurs, and terracotta borders.
+ * The foundational structural atom of the Flow design system.
+ * Handles surface backgrounds, backdrop blurs, and subtle borders.
  */
 export default function GlassPanel({
   children,

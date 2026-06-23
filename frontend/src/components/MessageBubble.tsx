@@ -50,7 +50,7 @@ export default function MessageBubble({ message, onPick }: MessageBubbleProps) {
     <article className={`message-row ${isUser ? "message-row-user" : "message-row-assistant"}`}>
       {!isUser && (
         <div className="message-avatar-assistant shadow-xl">
-          <BespokeIcon icon={Sparkles} size={16} glowColor="rgba(217, 93, 57, 0.5)" strokeWidth={2.5} />
+          <BespokeIcon icon={Sparkles} size={16} glowColor="rgba(108, 108, 255, 0.5)" strokeWidth={2.5} />
         </div>
       )}
 

@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  FileText, CheckCircle2, Circle, Clock, ArrowLeft, Building2, AlertTriangle,
+  FileText, CheckCircle2, Circle, ArrowLeft, Home as HomeIcon, AlertTriangle, Calendar as CalendarIcon, Clock,
 } from "lucide-react";
-import type { AppFile, AppState, TWFiling } from "@/lib/types";
+import type { AppFile, AppState, Task, CalendarEvent } from "@/lib/types";
 import { getFileContent } from "@/lib/api";
 import { friendlyError } from "@/lib/utils";
 import MarkdownRenderer from "../MarkdownRenderer";
@@ -23,32 +23,34 @@ interface WorkbenchAppProps {
   agentWorking: boolean;
 }
 
-const DONE_STATUSES = new Set(["filed", "complete", "completed", "closed", "done"]);
-
-// A filing is overdue iff its due date is past today and it isn't filed/done — computed
-// client-side from the real date (mirrors taxdb.is_overdue) so the pane never shows a stale flag.
-function isOverdue(f: TWFiling, today: string): boolean {
-  if (DONE_STATUSES.has((f.status || "").toLowerCase())) return false;
-  const d = (f.dueDate || "").slice(0, 10);
+// A task is overdue iff its due date is past today and it isn't Done — computed
+// client-side from the real date (mirrors appdb.is_overdue) so the pane never shows a stale flag.
+function isOverdue(t: Task, today: string): boolean {
+  if (t.status === "Done") return false;
+  const d = (t.dueDate || "").slice(0, 10);
   return !!d && d < today;
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const s = status.toLowerCase();
-  let cls = "tw-badge-gray";
-  let Icon = Circle;
-  if (s.includes("progress")) { cls = "tw-badge-steel"; Icon = Clock; }
-  else if (DONE_STATUSES.has(s) || s.includes("filed")) { cls = "tw-badge-green"; Icon = CheckCircle2; }
-  else if (s.includes("review")) { cls = "tw-badge-gold"; Icon = Clock; }
-  return <span className={`tw-badge ${cls}`}><Icon size={11} strokeWidth={2.5} />{status}</span>;
+function statusClass(status: string): string {
+  switch (status) {
+    case "Done": return "tw-badge-green";
+    case "In progress": return "tw-badge-orange";
+    case "Blocked": return "tw-badge-red";
+    default: return "tw-badge-gray"; // To do
+  }
 }
 
-function TypeBadge({ type }: { type: string }) {
-  return <span className="tw-type tw-type-general">{type}</span>;
+function StatusBadge({ status }: { status: string }) {
+  return <span className={`tw-badge ${statusClass(status)}`}>{status}</span>;
+}
+
+function PriorityBadge({ priority }: { priority: string }) {
+  const cls = priority === "High" ? "cell-pill-high" : priority === "Medium" ? "cell-pill-med" : "cell-pill-low";
+  return <span className={`cell-pill ${cls}`}>{priority}</span>;
 }
 
 function OverdueBadge() {
-  return <span className="tw-badge tw-badge-gold"><AlertTriangle size={11} strokeWidth={2.5} />Overdue</span>;
+  return <span className="tw-badge tw-badge-red"><AlertTriangle size={11} strokeWidth={2.5} />Overdue</span>;
 }
 
 export default function WorkbenchApp({
@@ -91,9 +93,9 @@ export default function WorkbenchApp({
       {/* App header */}
       <div className={`tw-appbar ${pulse ? "tw-appbar-pulse" : ""}`}>
         <div className="tw-appbar-brand">
-          <div className="tw-logo"><Building2 size={16} strokeWidth={2.5} /></div>
+          <div className="tw-logo"><HomeIcon size={16} strokeWidth={2.5} /></div>
           <div className="flex flex-col leading-tight">
-            <span className="tw-appbar-title">Tax Workbench</span>
+            <span className="tw-appbar-title">Flow</span>
             <span className="tw-appbar-sub">{agentWorking ? "Assistant working…" : "Ready"}</span>
           </div>
         </div>
@@ -128,11 +130,12 @@ export default function WorkbenchApp({
 
 function Breadcrumb({ appState, viewRoute }: { appState: AppState | null; viewRoute: string }) {
   if (!appState) return null;
-  let trail = "Dashboard";
-  if (viewRoute.startsWith("/filings/")) {
-    const f = appState.filings.find((x) => x.id === viewRoute.split("/").pop());
-    trail = `Filings  ›  ${f?.title ?? ""}`;
-  } else if (viewRoute === "/filings") trail = "Filings";
+  let trail = "Home";
+  if (viewRoute.startsWith("/todo/")) {
+    const t = appState.tasks.find((x) => x.id === viewRoute.split("/").pop());
+    trail = `To-Do  ›  ${t?.title ?? ""}`;
+  } else if (viewRoute === "/todo") trail = "To-Do";
+  else if (viewRoute === "/calendar") trail = "Calendar";
   else if (viewRoute === "/documents") trail = "Documents";
   return <div className="tw-breadcrumb" data-testid="breadcrumb">{trail}</div>;
 }
@@ -144,38 +147,47 @@ function RouteContent({ appState, viewRoute, onNavigate, uploadedFiles, generate
   if (!appState) return <div className="tw-empty">No data.</div>;
   const isNew = (id: string) => newRecordIds.includes(id);
   const today = new Date().toISOString().slice(0, 10);
+  const tasks = appState.tasks ?? [];
+  const events = appState.events ?? [];
 
-  // Filing detail
-  if (viewRoute.startsWith("/filings/")) {
-    const f = appState.filings.find((x) => x.id === viewRoute.split("/").pop());
-    if (!f) return <div className="tw-empty">Filing not found.</div>;
-    const checklist = f.checklist ?? [];
-    const done = checklist.filter((c) => c.done).length;
-    const overdue = isOverdue(f, today);
+  // ── Task detail (/todo/{id}) ──────────────────────────────────────────────
+  if (viewRoute.startsWith("/todo/")) {
+    const t = tasks.find((x) => x.id === viewRoute.split("/").pop());
+    if (!t) return <div className="tw-empty">Task not found.</div>;
+    const subtasks = t.subtasks ?? [];
+    const done = subtasks.filter((c) => c.done).length;
+    const overdue = isOverdue(t, today);
     return (
-      <div className="tw-screen" data-testid="filing-detail">
-        <button type="button" className="tw-back" onClick={() => onNavigate("/filings")}><ArrowLeft size={14} /> All filings</button>
-        <h1 className="tw-h1">{f.title}</h1>
+      <div className="tw-screen" data-testid="task-detail">
+        <button type="button" className="tw-back" onClick={() => onNavigate("/todo")}><ArrowLeft size={14} /> All tasks</button>
+        <h1 className="tw-h1">{t.title}</h1>
         <div className="flex flex-wrap items-center gap-2 mt-1">
-          <TypeBadge type={f.type || "Filing"} />
-          <StatusBadge status={f.status} />
+          <StatusBadge status={t.status} />
+          <PriorityBadge priority={t.priority} />
           {overdue && <OverdueBadge />}
         </div>
 
         <div className="tw-stats" style={{ marginTop: 18 }}>
-          <Stat label="Due" value={f.dueDate || "—"} />
-          <Stat label="Assignee" value={f.assignee || "Unassigned"} />
-          <Stat label="Checklist" value={`${done}/${checklist.length}`} />
+          <Stat label="Group" value={t.group || "—"} />
+          <Stat label="Due" value={t.dueDate || "—"} />
+          <Stat label="Subtasks" value={`${done}/${subtasks.length}`} />
         </div>
 
+        {t.notes && (
+          <section className="tw-section">
+            <h2 className="tw-h2">Notes</h2>
+            <div className="tw-doc"><p className="tw-subtle" style={{ margin: 0 }}>{t.notes}</p></div>
+          </section>
+        )}
+
         <section className="tw-section">
-          <h2 className="tw-h2">Checklist <span className="tw-count">{checklist.length}</span></h2>
-          {checklist.length === 0 ? (
-            <div className="tw-empty-card"><Circle size={16} /> No checklist items yet. Ask the assistant to add a step.</div>
+          <h2 className="tw-h2">Subtasks <span className="tw-count">{subtasks.length}</span></h2>
+          {subtasks.length === 0 ? (
+            <div className="tw-empty-card"><Circle size={16} /> No subtasks yet. Ask the assistant to add a step.</div>
           ) : (
-            <div className="tw-doclist" data-testid="filing-checklist">
-              {checklist.map((c, i) => (
-                <div key={i} className="tw-docitem" data-testid={`checklist-item-${i}`} style={{ cursor: "default" }}>
+            <div className="tw-doclist" data-testid="task-subtasks">
+              {subtasks.map((c, i) => (
+                <div key={i} className="tw-docitem" data-testid={`subtask-${i}`} style={{ cursor: "default" }}>
                   {c.done ? <CheckCircle2 size={15} className="text-green-500" /> : <Circle size={15} />}
                   <span className={c.done ? "line-through opacity-60" : ""}>{c.text}</span>
                 </div>
@@ -187,47 +199,107 @@ function RouteContent({ appState, viewRoute, onNavigate, uploadedFiles, generate
     );
   }
 
-  // Filings list
-  if (viewRoute === "/filings") {
-    const filings = appState.filings;
-    const overdueCount = filings.filter((f) => isOverdue(f, today)).length;
+  // ── To-Do (/todo) — tasks grouped by bucket ───────────────────────────────
+  if (viewRoute === "/todo") {
+    const overdueCount = tasks.filter((t) => isOverdue(t, today)).length;
+    const groups = Array.from(new Set(tasks.map((t) => t.group || "Ungrouped")));
     return (
-      <div className="tw-screen" data-testid="filings-screen">
-        <h1 className="tw-h1">Filings</h1>
-        <p className="tw-subtle">Returns, estimated payments, extensions, and provisions.</p>
+      <div className="tw-screen" data-testid="todo-screen">
+        <h1 className="tw-h1">To-Do</h1>
+        <p className="tw-subtle">Your tasks, grouped by bucket.</p>
         <div className="tw-stats">
-          <Stat label="Filings" value={filings.length} />
-          <Stat label="Open" value={filings.filter((f) => !DONE_STATUSES.has((f.status || "").toLowerCase())).length} />
+          <Stat label="Tasks" value={tasks.length} />
+          <Stat label="Open" value={tasks.filter((t) => t.status !== "Done").length} />
           <Stat label="Overdue" value={overdueCount} />
         </div>
-        <section className="tw-section">
-          {filings.length === 0 ? <div className="tw-empty-sm">No filings yet. Ask the assistant to create one.</div> : (
-            <table className="tw-table" data-testid="filings-table">
-              <thead><tr><th>Filing</th><th>Type</th><th>Status</th><th>Due</th><th>Assignee</th><th>Checklist</th></tr></thead>
-              <tbody>
-                {filings.map((f) => {
-                  const checklist = f.checklist ?? [];
-                  const done = checklist.filter((c) => c.done).length;
-                  const overdue = isOverdue(f, today);
-                  return (
-                    <tr key={f.id} data-testid={`filing-row-${f.id}`} className={`tw-rowlink ${isNew(f.id) ? "tw-row-new" : ""}`} onClick={() => onNavigate(`/filings/${f.id}`)}>
-                      <td className="tw-td-title">{f.title}{isNew(f.id) && <span className="tw-new">New</span>}</td>
-                      <td><TypeBadge type={f.type || "Filing"} /></td>
-                      <td><div className="flex items-center gap-1.5">{overdue && <OverdueBadge />}<StatusBadge status={f.status} /></div></td>
-                      <td className="tw-td-mono">{f.dueDate || "—"}</td>
-                      <td>{f.assignee || "Unassigned"}</td>
-                      <td className="tw-td-mono">{done}/{checklist.length}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </section>
+        {tasks.length === 0 ? (
+          <section className="tw-section"><div className="tw-empty-sm">No tasks yet. Ask the assistant to create one.</div></section>
+        ) : (
+          groups.map((group) => {
+            const rows = tasks.filter((t) => (t.group || "Ungrouped") === group);
+            return (
+              <section className="tw-section" key={group} data-testid={`todo-group-${group}`}>
+                <h2 className="tw-h2">{group} <span className="tw-count">{rows.length}</span></h2>
+                <table className="tw-table" data-testid="tasks-table">
+                  <thead><tr><th>Task</th><th>Status</th><th>Priority</th><th>Due</th><th>Subtasks</th></tr></thead>
+                  <tbody>
+                    {rows.map((t) => {
+                      const subtasks = t.subtasks ?? [];
+                      const done = subtasks.filter((c) => c.done).length;
+                      const overdue = isOverdue(t, today);
+                      return (
+                        <tr key={t.id} data-testid={`task-row-${t.id}`} className={`tw-rowlink ${isNew(t.id) ? "tw-row-new" : ""}`} onClick={() => onNavigate(`/todo/${t.id}`)}>
+                          <td className="tw-td-title">{t.title}{isNew(t.id) && <span className="tw-new">New</span>}</td>
+                          <td><div className="flex items-center gap-1.5">{overdue && <OverdueBadge />}<StatusBadge status={t.status} /></div></td>
+                          <td><PriorityBadge priority={t.priority} /></td>
+                          <td className="tw-td-mono">{t.dueDate || "—"}</td>
+                          <td className="tw-td-mono">{done}/{subtasks.length}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </section>
+            );
+          })
+        )}
       </div>
     );
   }
 
+  // ── Calendar (/calendar) — agenda by day, merging events + tasks-with-dueDate ──
+  if (viewRoute === "/calendar") {
+    type AgendaItem = { kind: "event" | "task"; id: string; date: string; sort: string; title: string; meta: string };
+    const items: AgendaItem[] = [];
+    for (const e of events) {
+      if (!e.date) continue;
+      items.push({ kind: "event", id: e.id, date: e.date.slice(0, 10), sort: e.start || "00:00", title: e.title, meta: `${e.type || "Event"}${e.start ? ` · ${e.start}${e.end ? `–${e.end}` : ""}` : ""}` });
+    }
+    for (const t of tasks) {
+      if (!t.dueDate || t.status === "Done") continue;
+      items.push({ kind: "task", id: t.id, date: t.dueDate.slice(0, 10), sort: "zz", title: t.title, meta: `Task due · ${t.group || "Ungrouped"}` });
+    }
+    const days = Array.from(new Set(items.map((i) => i.date))).sort();
+    return (
+      <div className="tw-screen" data-testid="calendar-screen">
+        <h1 className="tw-h1">Calendar</h1>
+        <p className="tw-subtle">Events and task deadlines, by day.</p>
+        {items.length === 0 ? (
+          <section className="tw-section"><div className="tw-empty-sm">Nothing scheduled. Ask the assistant to add an event.</div></section>
+        ) : (
+          days.map((day) => {
+            const dayItems = items.filter((i) => i.date === day).sort((a, b) => (a.sort < b.sort ? -1 : 1));
+            return (
+              <section className="tw-section" key={day} data-testid={`calendar-day-${day}`}>
+                <h2 className="tw-h2">
+                  <CalendarIcon size={14} /> {dayLabel(day, today)} <span className="tw-count">{dayItems.length}</span>
+                </h2>
+                <div className="tw-doclist">
+                  {dayItems.map((i) => (
+                    <div
+                      key={`${i.kind}-${i.id}`}
+                      className={`tw-docitem ${i.kind === "task" ? "tw-rowlink" : ""}`}
+                      data-testid={`agenda-${i.kind}-${i.id}`}
+                      onClick={i.kind === "task" ? () => onNavigate(`/todo/${i.id}`) : undefined}
+                      style={i.kind === "task" ? undefined : { cursor: "default" }}
+                    >
+                      {i.kind === "event" ? <Clock size={15} /> : <CheckSquareDot />}
+                      <span className="flex flex-col min-w-0">
+                        <span className="tw-td-title">{i.title}</span>
+                        <span className="tw-td-sub">{i.meta}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })
+        )}
+      </div>
+    );
+  }
+
+  // ── Documents (/documents) — seeded/uploaded vs AI-generated ──────────────
   if (viewRoute === "/documents") {
     return (
       <div className="tw-screen" data-testid="documents-screen">
@@ -238,21 +310,23 @@ function RouteContent({ appState, viewRoute, onNavigate, uploadedFiles, generate
     );
   }
 
-  // Dashboard (default)
-  const filings = appState.filings;
-  const openFilings = filings.filter((f) => !DONE_STATUSES.has((f.status || "").toLowerCase()));
-  const overdue = filings.filter((f) => isOverdue(f, today));
-  const upcoming = openFilings
-    .filter((f) => f.dueDate)
-    .sort((a, b) => (a.dueDate! < b.dueDate! ? -1 : 1))
-    .slice(0, 6);
+  // ── Home (default) — today's agenda ───────────────────────────────────────
+  const openTasks = tasks.filter((t) => t.status !== "Done");
+  const overdue = tasks.filter((t) => isOverdue(t, today));
+  const dueToday = openTasks.filter((t) => (t.dueDate || "").slice(0, 10) === today);
+  const eventsToday = events.filter((e) => (e.date || "").slice(0, 10) === today)
+    .sort((a, b) => ((a.start || "") < (b.start || "") ? -1 : 1));
+  const nextEvents = events.filter((e) => (e.date || "").slice(0, 10) >= today)
+    .sort((a, b) => (`${a.date}${a.start || ""}` < `${b.date}${b.start || ""}` ? -1 : 1))
+    .slice(0, 5);
   return (
-    <div className="tw-screen" data-testid="dashboard-screen">
-      <h1 className="tw-h1">Dashboard</h1>
-      <p className="tw-subtle">A snapshot of your filings.</p>
+    <div className="tw-screen" data-testid="home-screen">
+      <h1 className="tw-h1">Home</h1>
+      <p className="tw-subtle">Today&apos;s agenda — {dayLabel(today, today)}.</p>
       <div className="tw-stats">
-        <Stat label="Filings" value={filings.length} />
-        <Stat label="Open" value={openFilings.length} />
+        <Stat label="Tasks" value={tasks.length} />
+        <Stat label="Open" value={openTasks.length} />
+        <Stat label="Due today" value={dueToday.length} />
         <Stat label="Overdue" value={overdue.length} />
       </div>
 
@@ -260,14 +334,14 @@ function RouteContent({ appState, viewRoute, onNavigate, uploadedFiles, generate
         <section className="tw-section">
           <h2 className="tw-h2">Overdue <span className="tw-count">{overdue.length}</span></h2>
           <table className="tw-table" data-testid="overdue-table">
-            <thead><tr><th>Filing</th><th>Type</th><th>Status</th><th>Due</th></tr></thead>
+            <thead><tr><th>Task</th><th>Group</th><th>Status</th><th>Due</th></tr></thead>
             <tbody>
-              {overdue.map((f) => (
-                <tr key={f.id} className="tw-rowlink" data-testid={`overdue-row-${f.id}`} onClick={() => onNavigate(`/filings/${f.id}`)}>
-                  <td className="tw-td-title">{f.title}</td>
-                  <td><TypeBadge type={f.type || "Filing"} /></td>
-                  <td><StatusBadge status={f.status} /></td>
-                  <td className="tw-td-mono">{f.dueDate}</td>
+              {overdue.map((t) => (
+                <tr key={t.id} className="tw-rowlink" data-testid={`overdue-row-${t.id}`} onClick={() => onNavigate(`/todo/${t.id}`)}>
+                  <td className="tw-td-title">{t.title}</td>
+                  <td>{t.group || "—"}</td>
+                  <td><StatusBadge status={t.status} /></td>
+                  <td className="tw-td-mono">{t.dueDate}</td>
                 </tr>
               ))}
             </tbody>
@@ -276,25 +350,60 @@ function RouteContent({ appState, viewRoute, onNavigate, uploadedFiles, generate
       )}
 
       <section className="tw-section">
-        <h2 className="tw-h2">Upcoming deadlines</h2>
-        {upcoming.length === 0 ? <div className="tw-empty-sm">No open deadlines.</div> : (
-          <table className="tw-table" data-testid="deadlines-table">
-            <thead><tr><th>Filing</th><th>Type</th><th>Status</th><th>Due</th></tr></thead>
+        <h2 className="tw-h2">Due today</h2>
+        {dueToday.length === 0 ? <div className="tw-empty-sm">Nothing due today.</div> : (
+          <table className="tw-table" data-testid="due-today-table">
+            <thead><tr><th>Task</th><th>Group</th><th>Status</th><th>Priority</th></tr></thead>
             <tbody>
-              {upcoming.map((f) => (
-                <tr key={f.id} className="tw-rowlink" onClick={() => onNavigate(`/filings/${f.id}`)}>
-                  <td className="tw-td-title">{f.title}</td>
-                  <td><TypeBadge type={f.type || "Filing"} /></td>
-                  <td><StatusBadge status={f.status} /></td>
-                  <td className="tw-td-mono">{f.dueDate}</td>
+              {dueToday.map((t) => (
+                <tr key={t.id} className="tw-rowlink" onClick={() => onNavigate(`/todo/${t.id}`)}>
+                  <td className="tw-td-title">{t.title}</td>
+                  <td>{t.group || "—"}</td>
+                  <td><StatusBadge status={t.status} /></td>
+                  <td><PriorityBadge priority={t.priority} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </section>
+
+      <section className="tw-section">
+        <h2 className="tw-h2">{eventsToday.length > 0 ? "Today's events" : "Next up"}</h2>
+        {(eventsToday.length > 0 ? eventsToday : nextEvents).length === 0 ? (
+          <div className="tw-empty-sm">No upcoming events.</div>
+        ) : (
+          <div className="tw-doclist" data-testid="home-events">
+            {(eventsToday.length > 0 ? eventsToday : nextEvents).map((e) => (
+              <div key={e.id} className="tw-docitem" style={{ cursor: "default" }} data-testid={`home-event-${e.id}`}>
+                <Clock size={15} />
+                <span className="flex flex-col min-w-0">
+                  <span className="tw-td-title">{e.title}</span>
+                  <span className="tw-td-sub">{dayLabel(e.date, today)}{e.start ? ` · ${e.start}${e.end ? `–${e.end}` : ""}` : ""}{e.type ? ` · ${e.type}` : ""}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
+}
+
+// Small green-dot marker reused for task items in the agenda.
+function CheckSquareDot() {
+  return <CheckCircle2 size={15} className="text-green-500" />;
+}
+
+// "Today" / "Tomorrow" / weekday-date label for an ISO day vs. today.
+function dayLabel(iso: string, today: string): string {
+  if (iso === today) return "Today";
+  const d = new Date(`${iso}T00:00:00`);
+  const t = new Date(`${today}T00:00:00`);
+  const diff = Math.round((d.getTime() - t.getTime()) / 86_400_000);
+  if (diff === 1) return "Tomorrow";
+  if (diff === -1) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
 function Stat({ label, value }: { label: string; value: number | string }) {

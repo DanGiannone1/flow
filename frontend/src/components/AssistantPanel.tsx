@@ -25,23 +25,23 @@ export default function AssistantPanel({ headerActions, onOpenWorkspace }: { hea
   // Instant quick-nav targets (the app's pages) — client-side, no agent.
   const quickNav = useMemo(() => (
     [
-      { label: "Dashboard", route: "/dashboard" },
-      { label: "Filings", route: "/filings" },
+      { label: "Home", route: "/home" },
+      { label: "To-Do", route: "/todo" },
+      { label: "Calendar", route: "/calendar" },
       { label: "Documents", route: "/documents" },
     ]
   ), []);
 
-  // "Needs attention" — overdue filings, computed client-side so opening the assistant lands the
-  // user on what matters with one click (no asking, no agent turn). Filed = not overdue.
+  // "Needs attention" — overdue tasks, computed client-side so opening the assistant lands the
+  // user on what matters with one click (no asking, no agent turn). Done = not overdue.
   const attention = useMemo(() => {
     const app = state.appState;
     if (!app) return [];
     const today = new Date().toISOString().slice(0, 10);
-    const done = new Set(["filed", "complete", "completed", "closed", "done"]);
-    return app.filings
-      .filter((f) => f.dueDate && f.dueDate.slice(0, 10) < today && !done.has((f.status || "").toLowerCase()))
+    return app.tasks
+      .filter((t) => t.dueDate && t.dueDate.slice(0, 10) < today && t.status !== "Done")
       .slice(0, 4)
-      .map((f) => ({ label: f.title, sublabel: `${f.type || "Filing"} · due ${f.dueDate}`, route: `/filings/${f.id}` }));
+      .map((t) => ({ label: t.title, sublabel: `${t.group || "Task"} · due ${t.dueDate}`, route: `/todo/${t.id}` }));
   }, [state.appState]);
 
   const handleNewChat = useCallback(() => {
@@ -53,11 +53,11 @@ export default function AssistantPanel({ headerActions, onOpenWorkspace }: { hea
     <div className="flex h-full flex-col gap-3 min-w-0">
       <header className="h-14 flex items-center justify-between px-5 bg-surface-1/70 backdrop-blur-2xl rounded-2xl border border-border-subtle shrink-0">
         <div className="flex items-center gap-2.5 font-bold tracking-tight">
-          <div className={`p-1.5 rounded-lg bg-gradient-to-br from-brand-primary to-brand-warning relative ${agentWorking ? "agent-working" : ""}`}>
+          <div className={`p-1.5 rounded-lg bg-gradient-to-br from-brand-primary to-brand-accent relative ${agentWorking ? "agent-working" : ""}`}>
             <BespokeIcon icon={Sparkles} size={16} className="text-white" glowColor="rgba(255,255,255,0.4)" />
           </div>
           <div className="flex flex-col leading-tight">
-            <span className="text-text-primary text-[15px]">Tax Assistant</span>
+            <span className="text-text-primary text-[15px]">Flow Assistant</span>
             <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
               {agentWorking ? "Working…" : "Ready"}
             </span>
@@ -102,7 +102,7 @@ export default function AssistantPanel({ headerActions, onOpenWorkspace }: { hea
                 onClick={onOpenWorkspace}
                 className="interactive-control mx-4 mb-2 flex items-center gap-3 rounded-xl border border-brand-primary/40 bg-surface-2/60 px-3.5 py-2.5 text-left hover:border-brand-primary transition-all"
               >
-                <span className="p-1.5 rounded-lg bg-brand-primary/15 text-brand-warning shrink-0"><FileText size={15} /></span>
+                <span className="p-1.5 rounded-lg bg-brand-primary/15 text-brand-accent shrink-0"><FileText size={15} /></span>
                 <span className="flex flex-col min-w-0 flex-1">
                   <span className="text-[12px] font-semibold text-text-primary truncate">{artifacts[0].filename}</span>
                   <span className="text-[10px] uppercase tracking-widest text-text-muted">{artifacts.length} artifact{artifacts.length === 1 ? "" : "s"} · open in workspace</span>
@@ -125,7 +125,7 @@ export default function AssistantPanel({ headerActions, onOpenWorkspace }: { hea
 
       {confirmNewChat && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-app/80 backdrop-blur-md px-4" onClick={() => setConfirmNewChat(false)}>
-          <div className="w-full max-w-sm rounded-[2rem] border border-border-subtle bg-surface-1 p-8 shadow-[0_32px_64px_rgba(0,0,0,0.6)] relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-sm rounded-[2rem] border border-border-subtle bg-surface-1 p-8 shadow-[0_24px_60px_rgba(0,0,0,0.15)] relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="absolute top-0 inset-x-0 h-1 bg-brand-primary" />
             <h2 className="text-lg font-bold text-text-primary uppercase tracking-wide">New session?</h2>
             <p className="mt-3 text-sm text-text-muted leading-relaxed">This clears the current conversation and resets the workspace to seed data.</p>

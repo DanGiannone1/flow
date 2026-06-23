@@ -120,8 +120,8 @@ export default function InputBar({
 
         <div className={`flex items-end gap-2 rounded-2xl border bg-var(--color-app)/70 backdrop-blur-2xl p-1.5 transition-all duration-500 relative overflow-hidden group ${
           inputFocused 
-            ? "border-var(--color-brand-primary)/60 shadow-[0_0_40px_rgba(217,93,57,0.2)] bg-var(--color-app)/90" 
-            : "border-var(--color-border-subtle)/80 shadow-[0_20px_50px_rgba(0,0,0,.6)]"
+            ? "border-var(--color-brand-primary)/60 shadow-[0_0_40px_rgba(0,115,234,0.15)] bg-var(--color-app)/90"
+            : "border-var(--color-border-subtle)/80 shadow-[0_8px_24px_rgba(0,0,0,.08)]"
         }`}>
           <div className="absolute top-0 left-4 right-4 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 
@@ -145,7 +145,7 @@ export default function InputBar({
             onKeyDown={handleKeyDown}
             onFocus={() => setInputFocused(true)}
             onBlur={() => setInputFocused(false)}
-            placeholder="Message Tax Assistant…"
+            placeholder="Message Flow Assistant…"
             disabled={disabled || uploadBusy}
             rows={1}
             className="min-h-10 max-h-52 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] font-medium leading-relaxed text-var(--color-text-primary) outline-none placeholder-var(--color-text-muted) disabled:opacity-50 font-sans"
@@ -170,7 +170,7 @@ export default function InputBar({
               data-testid="send-button"
               type="submit"
               disabled={disabled || uploadBusy || !canSend}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-var(--color-brand-primary) to-var(--color-brand-warning) text-white shadow-[0_4px_15px_rgba(217,93,57,0.4)] hover:brightness-110 disabled:opacity-40 disabled:grayscale transition-all"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-var(--color-brand-primary) to-var(--color-brand-accent) text-white shadow-[0_4px_15px_rgba(0,115,234,0.35)] hover:brightness-110 disabled:opacity-40 disabled:grayscale transition-all"
               aria-label="Send message"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="ml-0.5">

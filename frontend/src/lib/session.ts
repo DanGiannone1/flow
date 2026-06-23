@@ -1,7 +1,7 @@
 import type { ChatMessage } from "./types";
 
-const SESSION_KEY = "tax_workbench_session_id";
-const MESSAGES_KEY = "tax_workbench_messages";
+const SESSION_KEY = "flow_session_id";
+const MESSAGES_KEY = "flow_messages";
 
 export function storeSessionId(id: string): void {
   if (typeof window === "undefined") return;
