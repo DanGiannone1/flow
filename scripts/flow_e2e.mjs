@@ -3,7 +3,7 @@
 // points so "the agent said it did X" is proven against "X exists in app state"
 // (the anti-hallucination same-fact check). Run: node scripts/flow_e2e.mjs
 import { chromium } from "@playwright/test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 
 const APP = process.env.APP_URL || "http://localhost:3000";
 const API = process.env.API_URL || "http://localhost:8000";
@@ -130,6 +130,23 @@ async function main() {
   await shot(page, "12-doc-edited");
   const after = await fetchDoc();
   check("edit: kickoff.md content changed after edit", before && after && before !== after, `len ${before.length}→${after.length}`);
+
+  // [G] RAG over the indexed document library
+  console.log("\n[G] RAG");
+  await send(page, "What did I decide about the Q2 budget? Search my notes and cite the source document.");
+  await shot(page, "16-rag-answer");
+  const rag = await lastAssistant(page);
+  check("RAG: grounded answer about budget", /budget/i.test(rag) && rag.length > 40, rag.replace(/\n/g," ").slice(0,140));
+  check("RAG: cites a source document", /Q2-Budget|budget overview|one-on-one|\.md|notes/i.test(rag));
+  const traceTxt = (()=>{ try { return readFileSync("logs/trace.jsonl","utf8"); } catch { return ""; } })();
+  check("RAG: search_documents tool was actually called", /search_documents/.test(traceTxt));
+
+  await send(page, "Search my notes for the quarterly sales commission policy.");
+  await shot(page, "17-rag-absent");
+  const ragAbsent = await lastAssistant(page);
+  check("RAG: absent topic → honest 'not found', no fabrication",
+    /couldn'?t find|no .*(notes|mention|information|record|document)|don'?t (have|see)|nothing|not (in|found)/i.test(ragAbsent),
+    ragAbsent.replace(/\n/g," ").slice(0,140));
 
   // [I] Fail-loud: unknown destination
   console.log("\n[I] Fail-loud unknown nav");

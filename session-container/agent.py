@@ -105,6 +105,12 @@ How you work:
 - To write or revise a document (a brief, notes, a summary), use `write_file` — it appears
   in Documents and opens in the artifact canvas, where the user can edit it. To read an
   existing document first, use `list_documents` then `read_workspace_file`.
+- For "what did I decide about X", "find … in my notes", "search the docs/library", or any
+  question that needs grounding across the document library, use `search_documents` — it
+  returns the most relevant passages with their source filenames. Answer **only** from the
+  returned passages and cite the source filename(s). If it returns NO_RESULTS, say nothing
+  matched; if it returns SEARCH_NOT_CONFIGURED or SEARCH_FAILED, tell the user document
+  search is unavailable — never make up an answer.
 
 The user's current view may be provided as context (e.g. "[Current view: To-Do]"). Use it
 to resolve "here" / "this". The current date is provided as "[Today: …]".
@@ -186,8 +192,8 @@ def _result_text(result) -> str:
     return str(result or "")
 
 
-_NOOP_MARKERS = {"AMBIGUOUS", "NO_CHANGES", "NO_DOCUMENTS"}
-_ERROR_MARKERS = {"INVALID_PATH", "FILE_NOT_FOUND", "BINARY_FILE_UNSUPPORTED", "PATH_REQUIRED", "ENCODING_UNSUPPORTED", "TITLE_REQUIRED", "TEXT_REQUIRED", "DATE_REQUIRED"}
+_NOOP_MARKERS = {"AMBIGUOUS", "NO_CHANGES", "NO_DOCUMENTS", "NO_RESULTS"}
+_ERROR_MARKERS = {"INVALID_PATH", "FILE_NOT_FOUND", "BINARY_FILE_UNSUPPORTED", "PATH_REQUIRED", "ENCODING_UNSUPPORTED", "TITLE_REQUIRED", "TEXT_REQUIRED", "DATE_REQUIRED", "SEARCH_NOT_CONFIGURED", "SEARCH_FAILED", "QUERY_REQUIRED"}
 
 
 def _tool_outcome(result, success) -> str:
@@ -234,6 +240,61 @@ def _path_within_workspace(workspace: Path, candidate: Path) -> bool:
         return True
     except ValueError:
         return False
+
+
+_SEARCH_INDEX_NAME = "flow-documents-index"
+_SEARCH_SEMANTIC_CONFIG = "flow-semantic"
+_SEARCH_API_VERSION = "2024-07-01"
+
+
+def _search_documents_query(query: str, top: int = 4) -> str:
+    """Run a full-text + semantic-ranker query against the Flow document index.
+
+    Returns a formatted "PASSAGES" block (each passage with its source filename) on
+    success, or a leading status marker on every non-success path so the agent and the
+    UI trace stay honest:
+      - SEARCH_NOT_CONFIGURED — env vars missing (RAG has a hard Azure dependency)
+      - SEARCH_FAILED         — Search unreachable or returned an error
+      - NO_RESULTS            — the index had nothing relevant
+    Never fabricates or silently returns an empty answer.
+    """
+    import httpx
+
+    endpoint = os.getenv("AZURE_SEARCH_ENDPOINT")
+    key = os.getenv("AZURE_SEARCH_KEY")
+    if not endpoint or not key:
+        return (
+            "SEARCH_NOT_CONFIGURED: document search is unavailable because Azure AI Search "
+            "is not configured (missing AZURE_SEARCH_ENDPOINT / AZURE_SEARCH_KEY)."
+        )
+    url = endpoint.rstrip("/") + f"/indexes/{_SEARCH_INDEX_NAME}/docs/search"
+    body = {
+        "search": query,
+        "top": top,
+        "select": "filename,title,chunk",
+        "queryType": "semantic",
+        "semanticConfiguration": _SEARCH_SEMANTIC_CONFIG,
+    }
+    try:
+        resp = httpx.post(
+            url,
+            params={"api-version": _SEARCH_API_VERSION},
+            headers={"api-key": key, "Content-Type": "application/json"},
+            json=body,
+            timeout=20,
+        )
+    except httpx.HTTPError as exc:
+        return f"SEARCH_FAILED: could not reach Azure AI Search ({exc})."
+    if resp.status_code != 200:
+        return f"SEARCH_FAILED: Azure AI Search returned {resp.status_code}: {resp.text[:200]}"
+    results = resp.json().get("value", [])
+    if not results:
+        return f"NO_RESULTS: nothing in the document library matched '{query}'."
+    lines = [f"PASSAGES for '{query}' ({len(results)} from the document library):"]
+    for r in results:
+        snippet = " ".join((r.get("chunk") or "").split())
+        lines.append(f"- source: {r.get('filename')}\n  {snippet}")
+    return "\n".join(lines)
 
 
 def _normalize_workspace_text(text: str) -> str:
@@ -322,6 +383,10 @@ class UpdateEventParams(BaseModel):
 
 class DeleteEventParams(BaseModel):
     event: str = Field(description="Event id or a distinctive part of its title")
+
+
+class SearchDocumentsParams(BaseModel):
+    query: str = Field(description="What to look for in the document library, in natural language, e.g. 'what did we decide about the budget' or 'kickoff goals'")
 
 
 # ── Tool builders (closures over the session workspace) ─────────────────────
@@ -620,11 +685,19 @@ def _build_flow_tools(working_dir: str) -> list:
         resolved.write_text(params.content, encoding="utf-8")
         return f"WROTE {resolved.name} ({resolved.stat().st_size} bytes)."
 
+    @define_tool(name="search_documents", description="Semantic search over the indexed document library (meeting notes, briefs, references). Returns the top matching passages, each with its source filename. Use to answer 'what did I decide about X', 'find … in my notes', or 'search the docs'.")
+    def search_documents(params: SearchDocumentsParams) -> str:
+        query = params.query.strip()
+        if not query:
+            return "QUERY_REQUIRED: provide what to search for."
+        return _search_documents_query(query)
+
     return [
         navigate,
         list_tasks, create_task, update_task, delete_task, add_subtask,
         list_events, create_event, update_event, delete_event,
         list_documents, read_workspace_file, write_file,
+        search_documents,
     ]
 
 
