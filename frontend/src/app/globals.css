@@ -455,6 +455,8 @@ html, body {
 .tw-td-title { color: var(--text-primary); font-weight: 600; }
 .tw-td-sub { color: var(--text-muted); font-size: 0.74rem; font-weight: 400; margin-top: 0.15rem; max-width: 32rem; }
 .tw-td-mono { font-family: var(--font-mono); font-size: 0.76rem; }
+/* Overdue is signalled once, as a red due date (single status pill stays in the Status column). */
+.tw-due-overdue { color: #e2445c; font-weight: 600; }
 
 .tw-badge { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.68rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
 /* To do — neutral gray */

@@ -230,9 +230,9 @@ function RouteContent({ appState, viewRoute, onNavigate, uploadedFiles, generate
                       return (
                         <tr key={t.id} data-testid={`task-row-${t.id}`} className={`tw-rowlink ${isNew(t.id) ? "tw-row-new" : ""}`} onClick={() => onNavigate(`/todo/${t.id}`)}>
                           <td className="tw-td-title">{t.title}{isNew(t.id) && <span className="tw-new">New</span>}</td>
-                          <td><div className="flex items-center gap-1.5">{overdue && <OverdueBadge />}<StatusBadge status={t.status} /></div></td>
+                          <td><StatusBadge status={t.status} /></td>
                           <td><PriorityBadge priority={t.priority} /></td>
-                          <td className="tw-td-mono">{t.dueDate || "—"}</td>
+                          <td className={`tw-td-mono ${overdue ? "tw-due-overdue" : ""}`} title={overdue ? "Overdue" : undefined}>{t.dueDate || "—"}</td>
                           <td className="tw-td-mono">{done}/{subtasks.length}</td>
                         </tr>
                       );
@@ -396,14 +396,20 @@ function CheckSquareDot() {
 }
 
 // "Today" / "Tomorrow" / weekday-date label for an ISO day vs. today.
+// Formatted deterministically (fixed UTC + fixed names, no toLocaleDateString) so the
+// server prerender and client hydration always produce the identical string regardless
+// of locale/timezone — avoids React hydration mismatches on date-derived text.
+const _WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const _MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function dayLabel(iso: string, today: string): string {
   if (iso === today) return "Today";
-  const d = new Date(`${iso}T00:00:00`);
-  const t = new Date(`${today}T00:00:00`);
+  const d = new Date(`${iso}T00:00:00Z`);
+  const t = new Date(`${today}T00:00:00Z`);
   const diff = Math.round((d.getTime() - t.getTime()) / 86_400_000);
   if (diff === 1) return "Tomorrow";
   if (diff === -1) return "Yesterday";
-  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const [, m, day] = iso.split("-").map(Number);
+  return `${_WD[d.getUTCDay()]}, ${_MO[m - 1]} ${day}`;
 }
 
 function Stat({ label, value }: { label: string; value: number | string }) {
