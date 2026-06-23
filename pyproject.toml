@@ -1,0 +1,19 @@
+[project]
+name = "tax-agent"
+version = "0.1.0"
+description = "AI-powered RFP analysis agent with Azure OpenAI and isolated session containers"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.11.0",
+    "azure-ai-contentunderstanding>=1.0.0",
+    "azure-identity>=1.25.2",
+    "azure-search-documents>=11.7.0b2",
+    "azure-storage-file-datalake>=12.23.0",
+    "fastapi>=0.133.0",
+    "httpx>=0.28.0",
+    "PyJWT[crypto]>=2.10.1",
+    "python-dotenv>=1.2.1",
+    "python-multipart>=0.0.20",
+    "uvicorn[standard]>=0.41.0",
+]
