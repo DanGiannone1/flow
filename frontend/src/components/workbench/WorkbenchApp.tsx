@@ -137,6 +137,7 @@ function Breadcrumb({ appState, viewRoute }: { appState: AppState | null; viewRo
   } else if (viewRoute === "/todo") trail = "To-Do";
   else if (viewRoute === "/calendar") trail = "Calendar";
   else if (viewRoute === "/documents") trail = "Documents";
+  else if (viewRoute === "/reminders") trail = "Reminders";
   return <div className="tw-breadcrumb" data-testid="breadcrumb">{trail}</div>;
 }
 

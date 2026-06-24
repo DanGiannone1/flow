@@ -69,7 +69,12 @@ def send_email(to: str, subject: str, body_text: str) -> str:
         },
     }
     poller = client.begin_send(message)
-    result = poller.result()  # blocks until ACS accepts/sends
-    msg_id = result["id"] if isinstance(result, dict) else getattr(result, "id", "unknown")
-    logger.info("ACS email sent to %s (id=%s)", to, msg_id)
+    result = poller.result()  # blocks until the send operation completes
+    status = result.get("status") if isinstance(result, dict) else getattr(result, "status", None)
+    msg_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", "unknown")
+    # The poller can complete with a non-success status (ACS accepted then rejected) — fail
+    # loud so the scheduler records an error instead of reporting a phantom success.
+    if status is not None and str(status).lower() != "succeeded":
+        raise RuntimeError(f"ACS send did not succeed (status={status}, id={msg_id})")
+    logger.info("ACS email sent to %s (id=%s, status=%s)", to, msg_id, status)
     return msg_id

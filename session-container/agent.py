@@ -419,8 +419,11 @@ def _build_flow_tools(working_dir: str) -> list:
     def _load() -> dict:
         return appdb.load()
 
-    def _save(data: dict) -> None:
-        appdb.save(data)
+    def _update(mutator):
+        """Concurrency-safe owner-doc mutation (ETag + retry, see appdb.update).
+        `mutator(data)` mutates and returns the tool's result string; raise
+        appdb.AbortWrite(msg) to return a message without writing (validation/no-op)."""
+        return appdb.update(mutator)
 
     def _resolve_task_strict(data: dict, ref: str):
         """Resolve a task ref to (task, error). Prefer exact id/title; fall back to a
@@ -448,17 +451,16 @@ def _build_flow_tools(working_dir: str) -> list:
 
     @define_tool(name="navigate", description="Navigate the Flow app to a page, a task, or a calendar event.")
     def navigate(params: NavigateParams) -> str:
-        data = _load()
-        result = appdb.resolve_destination(data, params.destination)
-        if result["status"] == "resolved":
-            data["currentRoute"] = result["path"]
-            _save(data)
-            return f"NAVIGATED to {result['title']} ({result['path']})"
-        if result["status"] == "ambiguous":
+        def _mut(data):
+            result = appdb.resolve_destination(data, params.destination)
+            if result["status"] == "resolved":
+                data["currentRoute"] = result["path"]
+                return f"NAVIGATED to {result['title']} ({result['path']})"
             opts = "; ".join(c["title"] for c in result["candidates"])
-            return f"AMBIGUOUS: '{params.destination}' matches multiple destinations: {opts}. Ask the user which one."
-        opts = "; ".join(c["title"] for c in result["candidates"])
-        return f"NOT_FOUND: no destination matched '{params.destination}'. Closest options: {opts}."
+            if result["status"] == "ambiguous":
+                raise appdb.AbortWrite(f"AMBIGUOUS: '{params.destination}' matches multiple destinations: {opts}. Ask the user which one.")
+            raise appdb.AbortWrite(f"NOT_FOUND: no destination matched '{params.destination}'. Closest options: {opts}.")
+        return _update(_mut)
 
     @define_tool(name="list_tasks", description="List the tasks with their status, priority, group, due date, a computed overdue flag, and subtask progress.")
     def list_tasks(params: ListTasksParams) -> str:
@@ -484,75 +486,75 @@ def _build_flow_tools(working_dir: str) -> list:
     def create_task(params: CreateTaskParams) -> str:
         if not params.title.strip():
             return "TITLE_REQUIRED: a task needs a title."
-        data = _load()
-        task = {
-            "id": appdb.new_id("t", data["tasks"]),
-            "title": params.title.strip(),
-            "status": params.status.strip() or "To do",
-            "priority": params.priority.strip() or "Medium",
-            "group": params.group.strip() or "General",
-            "dueDate": params.due_date.strip(),
-            "subtasks": [],
-            "notes": "",
-            "createdAt": appdb._now_iso(),
-        }
-        data["tasks"].append(task)
-        data["currentRoute"] = appdb.task_route(task["id"])
-        _save(data)
-        return (
-            f"CREATED task [{task['id']}] '{task['title']}', status {task['status']}, "
-            f"priority {task['priority']}, group {task['group']}, due {task['dueDate'] or 'n/a'}."
-        )
+        def _mut(data):
+            task = {
+                "id": appdb.new_id("t", data["tasks"]),
+                "title": params.title.strip(),
+                "status": params.status.strip() or "To do",
+                "priority": params.priority.strip() or "Medium",
+                "group": params.group.strip() or "General",
+                "dueDate": params.due_date.strip(),
+                "subtasks": [],
+                "notes": "",
+                "createdAt": appdb._now_iso(),
+            }
+            data["tasks"].append(task)
+            data["currentRoute"] = appdb.task_route(task["id"])
+            return (
+                f"CREATED task [{task['id']}] '{task['title']}', status {task['status']}, "
+                f"priority {task['priority']}, group {task['group']}, due {task['dueDate'] or 'n/a'}."
+            )
+        return _update(_mut)
 
     @define_tool(name="update_task", description="Update a task's status, priority, group, or due date.")
     def update_task(params: UpdateTaskParams) -> str:
-        data = _load()
-        t, err = _resolve_task_strict(data, params.task)
-        if err:
-            return err
-        changed = []
-        if params.status.strip():
-            t["status"] = params.status.strip()
-            changed.append(f"status={t['status']}")
-        if params.priority.strip():
-            t["priority"] = params.priority.strip()
-            changed.append(f"priority={t['priority']}")
-        if params.group.strip():
-            t["group"] = params.group.strip()
-            changed.append(f"group={t['group']}")
-        if params.due_date.strip():
-            t["dueDate"] = params.due_date.strip()
-            changed.append(f"due={t['dueDate']}")
-        if not changed:
-            return "NO_CHANGES: specify a status, priority, group, or due_date to update."
-        data["currentRoute"] = appdb.task_route(t["id"])
-        _save(data)
-        return f"UPDATED task [{t['id']}] '{t['title']}': {', '.join(changed)}."
+        def _mut(data):
+            t, err = _resolve_task_strict(data, params.task)
+            if err:
+                raise appdb.AbortWrite(err)
+            changed = []
+            if params.status.strip():
+                t["status"] = params.status.strip()
+                changed.append(f"status={t['status']}")
+            if params.priority.strip():
+                t["priority"] = params.priority.strip()
+                changed.append(f"priority={t['priority']}")
+            if params.group.strip():
+                t["group"] = params.group.strip()
+                changed.append(f"group={t['group']}")
+            if params.due_date.strip():
+                t["dueDate"] = params.due_date.strip()
+                changed.append(f"due={t['dueDate']}")
+            if not changed:
+                raise appdb.AbortWrite("NO_CHANGES: specify a status, priority, group, or due_date to update.")
+            data["currentRoute"] = appdb.task_route(t["id"])
+            return f"UPDATED task [{t['id']}] '{t['title']}': {', '.join(changed)}."
+        return _update(_mut)
 
     @define_tool(name="delete_task", description="Delete a task from the to-do list.")
     def delete_task(params: DeleteTaskParams) -> str:
-        data = _load()
-        t, err = _resolve_task_strict(data, params.task)
-        if err:
-            return err
-        data["tasks"] = [x for x in data["tasks"] if x["id"] != t["id"]]
-        data["currentRoute"] = "/todo"
-        _save(data)
-        return f"DELETED task [{t['id']}] '{t['title']}'."
+        def _mut(data):
+            t, err = _resolve_task_strict(data, params.task)
+            if err:
+                raise appdb.AbortWrite(err)
+            data["tasks"] = [x for x in data["tasks"] if x["id"] != t["id"]]
+            data["currentRoute"] = "/todo"
+            return f"DELETED task [{t['id']}] '{t['title']}'."
+        return _update(_mut)
 
     @define_tool(name="add_subtask", description="Add a subtask to a task.")
     def add_subtask(params: AddSubtaskParams) -> str:
         text = params.text.strip()
         if not text:
             return "TEXT_REQUIRED: provide the subtask text."
-        data = _load()
-        t, err = _resolve_task_strict(data, params.task)
-        if err:
-            return err
-        t.setdefault("subtasks", []).append({"text": text, "done": False})
-        data["currentRoute"] = appdb.task_route(t["id"])
-        _save(data)
-        return f"ADDED subtask to '{t['title']}': {text}."
+        def _mut(data):
+            t, err = _resolve_task_strict(data, params.task)
+            if err:
+                raise appdb.AbortWrite(err)
+            t.setdefault("subtasks", []).append({"text": text, "done": False})
+            data["currentRoute"] = appdb.task_route(t["id"])
+            return f"ADDED subtask to '{t['title']}': {text}."
+        return _update(_mut)
 
     @define_tool(name="list_events", description="List the calendar events with their date, time, and type.")
     def list_events(params: ListEventsParams) -> str:
@@ -579,64 +581,64 @@ def _build_flow_tools(working_dir: str) -> list:
             return "TITLE_REQUIRED: an event needs a title."
         if not params.date.strip():
             return "DATE_REQUIRED: an event needs a date (YYYY-MM-DD)."
-        data = _load()
-        event = {
-            "id": appdb.new_id("e", data["events"]),
-            "title": params.title.strip(),
-            "date": params.date.strip(),
-            "start": params.start.strip(),
-            "end": params.end.strip(),
-            "type": params.type.strip() or "Meeting",
-            "notes": "",
-        }
-        data["events"].append(event)
-        data["currentRoute"] = appdb.event_route(event["id"])
-        _save(data)
-        when = event["start"] or "all-day"
-        if event["start"] and event["end"]:
-            when = f"{event['start']}-{event['end']}"
-        return (
-            f"CREATED event [{event['id']}] '{event['title']}' ({event['type']}) on {event['date']} at {when}."
-        )
+        def _mut(data):
+            event = {
+                "id": appdb.new_id("e", data["events"]),
+                "title": params.title.strip(),
+                "date": params.date.strip(),
+                "start": params.start.strip(),
+                "end": params.end.strip(),
+                "type": params.type.strip() or "Meeting",
+                "notes": "",
+            }
+            data["events"].append(event)
+            data["currentRoute"] = appdb.event_route(event["id"])
+            when = event["start"] or "all-day"
+            if event["start"] and event["end"]:
+                when = f"{event['start']}-{event['end']}"
+            return (
+                f"CREATED event [{event['id']}] '{event['title']}' ({event['type']}) on {event['date']} at {when}."
+            )
+        return _update(_mut)
 
     @define_tool(name="update_event", description="Update or move a calendar event's title, date, time, or type.")
     def update_event(params: UpdateEventParams) -> str:
-        data = _load()
-        e, err = _resolve_event_strict(data, params.event)
-        if err:
-            return err
-        changed = []
-        if params.title.strip():
-            e["title"] = params.title.strip()
-            changed.append(f"title={e['title']}")
-        if params.date.strip():
-            e["date"] = params.date.strip()
-            changed.append(f"date={e['date']}")
-        if params.start.strip():
-            e["start"] = params.start.strip()
-            changed.append(f"start={e['start']}")
-        if params.end.strip():
-            e["end"] = params.end.strip()
-            changed.append(f"end={e['end']}")
-        if params.type.strip():
-            e["type"] = params.type.strip()
-            changed.append(f"type={e['type']}")
-        if not changed:
-            return "NO_CHANGES: specify a title, date, start, end, or type to update."
-        data["currentRoute"] = appdb.event_route(e["id"])
-        _save(data)
-        return f"UPDATED event [{e['id']}] '{e['title']}': {', '.join(changed)}."
+        def _mut(data):
+            e, err = _resolve_event_strict(data, params.event)
+            if err:
+                raise appdb.AbortWrite(err)
+            changed = []
+            if params.title.strip():
+                e["title"] = params.title.strip()
+                changed.append(f"title={e['title']}")
+            if params.date.strip():
+                e["date"] = params.date.strip()
+                changed.append(f"date={e['date']}")
+            if params.start.strip():
+                e["start"] = params.start.strip()
+                changed.append(f"start={e['start']}")
+            if params.end.strip():
+                e["end"] = params.end.strip()
+                changed.append(f"end={e['end']}")
+            if params.type.strip():
+                e["type"] = params.type.strip()
+                changed.append(f"type={e['type']}")
+            if not changed:
+                raise appdb.AbortWrite("NO_CHANGES: specify a title, date, start, end, or type to update.")
+            data["currentRoute"] = appdb.event_route(e["id"])
+            return f"UPDATED event [{e['id']}] '{e['title']}': {', '.join(changed)}."
+        return _update(_mut)
 
     @define_tool(name="delete_event", description="Delete a calendar event.")
     def delete_event(params: DeleteEventParams) -> str:
-        data = _load()
-        e, err = _resolve_event_strict(data, params.event)
-        if err:
-            return err
-        data["events"] = [x for x in data["events"] if x["id"] != e["id"]]
-        data["currentRoute"] = "/calendar"
-        _save(data)
-        return f"DELETED event [{e['id']}] '{e['title']}'."
+        def _mut(data):
+            e, err = _resolve_event_strict(data, params.event)
+            if err:
+                raise appdb.AbortWrite(err)
+            data["events"] = [x for x in data["events"] if x["id"] != e["id"]]
+            data["currentRoute"] = "/calendar"
+            return f"DELETED event [{e['id']}] '{e['title']}'."
+        return _update(_mut)
 
     @define_tool(name="list_documents", description="List the documents available in the workspace (provided source documents and generated artifacts) with a one-line descriptor. Use to discover what you can read before answering document questions.")
     def list_documents(params: ListDocumentsParams) -> str:
@@ -732,10 +734,18 @@ def _build_flow_tools(working_dir: str) -> list:
         days_of_week: list[int] = []
         if frequency == "weekly":
             name_to_idx = {n.lower(): i for i, n in enumerate(appdb.DAY_NAMES)}
+            bad = []
             for tok in params.days.split(","):
-                key = tok.strip().lower()[:3]
-                if key and key in name_to_idx:
+                raw = tok.strip()
+                if not raw:
+                    continue
+                key = raw.lower()[:3]
+                if key in name_to_idx:
                     days_of_week.append(name_to_idx[key])
+                else:
+                    bad.append(raw)
+            if bad:
+                return f"BAD_DAYS: unrecognized day(s) {bad}. Use day names like 'Mon,Wed,Fri'."
             days_of_week = sorted(set(days_of_week))
             if not days_of_week:
                 return "DAYS_REQUIRED: a weekly reminder needs day(s), e.g. 'Mon,Fri'."
@@ -743,29 +753,29 @@ def _build_flow_tools(working_dir: str) -> list:
             next_run = appdb.compute_next_run(frequency, params.time, timezone_name, days_of_week)
         except (ValueError, RuntimeError) as exc:
             return f"BAD_TIME: {exc}"
-        data = _load()
-        schedule = {
-            "id": appdb.new_id("s", data["schedules"]),
-            "title": title,
-            "prompt": prompt,
-            "frequency": frequency,
-            "time": params.time.strip(),
-            "timezone": timezone_name,
-            "daysOfWeek": days_of_week,
-            "enabled": True,
-            "channel": "email",
-            "createdAt": appdb._now_iso(),
-            "lastRunAt": None,
-            "lastStatus": None,
-            "nextRunAt": next_run.isoformat(),
-        }
-        data["schedules"].append(schedule)
-        data["currentRoute"] = "/reminders"
-        _save(data)
-        return (
-            f"CREATED reminder [{schedule['id']}] '{title}' — {appdb.schedule_summary(schedule)}. "
-            f"Next run {schedule['nextRunAt']}. It will email the result of: {prompt}"
-        )
+        def _mut(data):
+            schedule = {
+                "id": appdb.new_id("s", data["schedules"]),
+                "title": title,
+                "prompt": prompt,
+                "frequency": frequency,
+                "time": params.time.strip(),
+                "timezone": timezone_name,
+                "daysOfWeek": days_of_week,
+                "enabled": True,
+                "channel": "email",
+                "createdAt": appdb._now_iso(),
+                "lastRunAt": None,
+                "lastStatus": None,
+                "nextRunAt": next_run.isoformat(),
+            }
+            data["schedules"].append(schedule)
+            data["currentRoute"] = "/reminders"
+            return (
+                f"CREATED reminder [{schedule['id']}] '{title}' — {appdb.schedule_summary(schedule)}. "
+                f"Next run {schedule['nextRunAt']}. It will email the result of: {prompt}"
+            )
+        return _update(_mut)
 
     @define_tool(name="list_schedules", description="List the scheduled reminders with their cadence, next run time, and status.")
     def list_schedules(params: ListSchedulesParams) -> str:
@@ -784,14 +794,14 @@ def _build_flow_tools(working_dir: str) -> list:
 
     @define_tool(name="delete_schedule", description="Delete a scheduled reminder.")
     def delete_schedule(params: DeleteScheduleParams) -> str:
-        data = _load()
-        s = appdb.resolve_schedule(data, params.schedule)
-        if s is None:
-            return f"NOT_FOUND: no reminder matches '{params.schedule}'."
-        data["schedules"] = [x for x in data["schedules"] if x["id"] != s["id"]]
-        data["currentRoute"] = "/reminders"
-        _save(data)
-        return f"DELETED reminder [{s['id']}] '{s['title']}'."
+        def _mut(data):
+            s = appdb.resolve_schedule(data, params.schedule)
+            if s is None:
+                raise appdb.AbortWrite(f"NOT_FOUND: no reminder matches '{params.schedule}'.")
+            data["schedules"] = [x for x in data["schedules"] if x["id"] != s["id"]]
+            data["currentRoute"] = "/reminders"
+            return f"DELETED reminder [{s['id']}] '{s['title']}'."
+        return _update(_mut)
 
     return [
         navigate,

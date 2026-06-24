@@ -18,11 +18,14 @@ are surfaced separately. There is no user/account hierarchy — it's one person'
 from __future__ import annotations
 
 import os
+import random
 import re
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from azure.core import MatchConditions
 from azure.cosmos import CosmosClient
 from azure.cosmos import exceptions as cosmos_exceptions
 from azure.identity import DefaultAzureCredential
@@ -139,10 +142,64 @@ def load() -> dict:
 
 
 def save(data: dict) -> None:
-    """Upsert the owner's full state document to Cosmos (last-write-wins)."""
+    """Overwrite the owner doc unconditionally (last-write-wins).
+
+    NOT concurrency-safe — for seeding/admin/tests only. Concurrent mutations (agent
+    tools, the reminder scheduler) MUST go through `update()` so a write can't clobber
+    another writer's change.
+    """
     oid = _owner_id()
     container = _container()
     container.upsert_item({"id": oid, "sessionId": oid, **{k: data.get(k) for k in _STATE_KEYS}})
+
+
+class AbortWrite(Exception):
+    """Raised by an `update()` mutator to return a result WITHOUT writing (validation/no-op)."""
+
+    def __init__(self, result=None):
+        super().__init__("aborted")
+        self.result = result
+
+
+_MAX_UPDATE_RETRIES = 10
+
+
+def update(mutator):
+    """Read-modify-write the owner doc with optimistic concurrency (ETag) + retry.
+
+    `mutator(data)` mutates `data` in place and returns a result. It may raise
+    `AbortWrite(result)` to return without writing. If another writer commits between our
+    read and write (ETag mismatch), we re-read and re-run the mutator — safe because the
+    mutator has no side effects until the commit. Jittered backoff de-correlates retrying
+    writers; fails loud (rather than silently dropping the write) if contention persists.
+    """
+    oid = _owner_id()
+    container = _container()
+    last_exc = None
+    for attempt in range(_MAX_UPDATE_RETRIES):
+        try:
+            doc = container.read_item(item=oid, partition_key=oid)
+        except cosmos_exceptions.CosmosResourceNotFoundError:
+            ensure_seeded()
+            continue
+        data = _doc_to_state(doc)
+        try:
+            result = mutator(data)
+        except AbortWrite as abort:
+            return abort.result
+        body = {"id": oid, "sessionId": oid, **{k: data.get(k) for k in _STATE_KEYS}}
+        try:
+            container.replace_item(
+                item=oid, body=body,
+                etag=doc["_etag"], match_condition=MatchConditions.IfNotModified,
+            )
+            return result
+        except cosmos_exceptions.CosmosAccessConditionFailedError as exc:
+            last_exc = exc  # a concurrent writer committed first — back off, re-read, retry
+            time.sleep(random.uniform(0.02, 0.08) * (attempt + 1))
+    raise RuntimeError(
+        f"owner doc update failed after {_MAX_UPDATE_RETRIES} retries (write contention)"
+    ) from last_exc
 
 
 # ── Derived helpers ─────────────────────────────────────────────────────────
