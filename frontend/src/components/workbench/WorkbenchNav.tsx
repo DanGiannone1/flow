@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Home, CheckSquare, Calendar, Files, Sparkles } from "lucide-react";
+import { Home, CheckSquare, Calendar, Files, Sparkles, Bell } from "lucide-react";
 import { AppState } from "@/lib/types";
 
 // The Flow left-nav rail, shared by the host app and the Assistant workspace so
@@ -34,6 +34,7 @@ export default function WorkbenchNav({
       {navItem("/todo", "To-Do", CheckSquare)}
       {navItem("/calendar", "Calendar", Calendar)}
       {navItem("/documents", "Documents", Files)}
+      {navItem("/reminders", "Reminders", Bell)}
       <div className="tw-nav-section">Assistant</div>
       <button
         type="button"

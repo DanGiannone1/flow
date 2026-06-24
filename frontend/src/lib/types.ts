@@ -79,9 +79,25 @@ export interface CalendarEvent {
   notes?: string;
 }
 
+export interface Schedule {
+  id: string;
+  title: string;
+  prompt: string;
+  frequency: "daily" | "weekly";
+  time: string;             // 24h HH:MM, in `timezone`
+  timezone: string;         // IANA, e.g. America/New_York
+  daysOfWeek?: number[];    // weekly only; Mon=0 … Sun=6
+  enabled: boolean;
+  channel?: string;         // "email"
+  lastRunAt?: string | null;
+  lastStatus?: string | null;
+  nextRunAt?: string | null;
+}
+
 export interface AppState {
   currentRoute: string;
   tasks: Task[];
   events: CalendarEvent[];
   routes: { path: string; title: string; keywords?: string[] }[];
+  schedules: Schedule[];
 }

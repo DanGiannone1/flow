@@ -29,6 +29,7 @@ export default function AssistantPanel({ headerActions, onOpenWorkspace }: { hea
       { label: "To-Do", route: "/todo" },
       { label: "Calendar", route: "/calendar" },
       { label: "Documents", route: "/documents" },
+      { label: "Reminders", route: "/reminders" },
     ]
   ), []);
 

@@ -20,7 +20,8 @@ from __future__ import annotations
 import os
 import re
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from azure.cosmos import CosmosClient
 from azure.cosmos import exceptions as cosmos_exceptions
@@ -32,7 +33,7 @@ _LOCK = threading.Lock()
 # keyed by a STABLE owner id (single-user app), so it persists across sessions/tabs/
 # restarts. Documents/files stay in the per-session workspace folder. AAD-only (no
 # account key): DefaultAzureCredential — az login locally, managed identity in ACA.
-_STATE_KEYS = ("currentRoute", "tasks", "events", "routes")
+_STATE_KEYS = ("currentRoute", "tasks", "events", "routes", "schedules")
 # Single-user POC: one stable key for the owner's data. Swap to the Entra `oid` here
 # when multi-user accounts are introduced — nothing else in this module changes.
 _OWNER_ID = os.getenv("COSMOS_OWNER_ID", "owner")
@@ -83,6 +84,9 @@ def _seed() -> dict:
         # (manual UI) or the agent, then persisted to Cosmos.
         "tasks": [],
         "events": [],
+        # Scheduled reminders — saved prompts the orchestrator runs on a cadence and
+        # emails the result. Created by the user (via the agent) and persisted to Cosmos.
+        "schedules": [],
         # Catalog of navigable pages. `keywords` help the navigate tool resolve
         # free-text destinations deterministically without a separate LLM routing pass.
         # NOTE: the AI Workbench (/assistant) is a frontend-only route and is intentionally
@@ -92,13 +96,24 @@ def _seed() -> dict:
             {"path": "/todo", "title": "To-Do", "keywords": ["todo", "to do", "to-do", "tasks", "task", "list", "checklist"]},
             {"path": "/calendar", "title": "Calendar", "keywords": ["calendar", "schedule", "events", "event", "meetings", "agenda"]},
             {"path": "/documents", "title": "Documents", "keywords": ["documents", "docs", "notes", "files", "drafts", "library"]},
+            {"path": "/reminders", "title": "Reminders", "keywords": ["reminders", "reminder", "schedules", "scheduled", "recurring", "digest", "summary email"]},
         ],
     }
 
 
 def _doc_to_state(doc: dict) -> dict:
-    """Strip Cosmos system fields (_rid/_etag/_ts/id/sessionId) → just the app-state shape."""
-    return {k: doc.get(k) for k in _STATE_KEYS}
+    """Strip Cosmos system fields (_rid/_etag/_ts/id/sessionId) → just the app-state shape.
+
+    Collections missing from older docs (e.g. `schedules` added after first seed) are
+    coerced to [] so callers never have to null-check.
+    """
+    state = {k: doc.get(k) for k in _STATE_KEYS}
+    for k in ("tasks", "events", "routes", "schedules"):
+        if state.get(k) is None:
+            state[k] = []
+    if state.get("currentRoute") is None:
+        state["currentRoute"] = "/home"
+    return state
 
 
 def ensure_seeded() -> dict:
@@ -285,3 +300,95 @@ def new_id(prefix: str, existing: list[dict]) -> str:
     while f"{prefix}-{n}" in ids:
         n += 1
     return f"{prefix}-{n}"
+
+
+# ── Scheduled reminders ──────────────────────────────────────────────────────
+# A schedule is a saved prompt the orchestrator runs on a cadence, emailing the
+# result. Cadence is intentionally simple (daily / weekly at HH:MM in a timezone) —
+# no cron dependency. `nextRunAt` is a UTC ISO timestamp the scheduler compares to now.
+
+SCHEDULE_FREQUENCIES = ["daily", "weekly"]
+# Monday=0 … Sunday=6 (matches datetime.weekday()).
+DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def find_schedule(data: dict, schedule_id: str) -> dict | None:
+    return next((s for s in data.get("schedules", []) if s["id"] == schedule_id), None)
+
+
+def resolve_schedule(data: dict, ref: str) -> dict | None:
+    """Resolve a schedule by id, then exact title, then case-insensitive substring."""
+    ref = (ref or "").strip()
+    if not ref:
+        return None
+    by_id = find_schedule(data, ref)
+    if by_id:
+        return by_id
+    low = ref.lower()
+    schedules = data.get("schedules", [])
+    exact = [s for s in schedules if s["title"].lower() == low]
+    if len(exact) == 1:
+        return exact[0]
+    partial = [s for s in schedules if low in s["title"].lower()]
+    return partial[0] if len(partial) == 1 else None
+
+
+def _parse_hhmm(time_str: str) -> tuple[int, int]:
+    """Parse 'HH:MM' (24h) → (hour, minute); raises ValueError on bad input."""
+    parts = (time_str or "").strip().split(":")
+    if len(parts) != 2:
+        raise ValueError(f"time must be HH:MM (24h), got {time_str!r}")
+    hh, mm = int(parts[0]), int(parts[1])
+    if not (0 <= hh <= 23 and 0 <= mm <= 59):
+        raise ValueError(f"time out of range: {time_str!r}")
+    return hh, mm
+
+
+def normalize_timezone(timezone_name: str) -> str:
+    """Validate a tz name, returning it normalized; raises ValueError if unknown."""
+    tz = (timezone_name or "UTC").strip() or "UTC"
+    try:
+        ZoneInfo(tz)
+    except Exception as exc:  # ZoneInfoNotFoundError + others
+        raise ValueError(f"unknown timezone {tz!r}") from exc
+    return tz
+
+
+def compute_next_run(frequency: str, time_str: str, timezone_name: str,
+                     days_of_week: list[int] | None = None,
+                     after: datetime | None = None) -> datetime:
+    """Return the next UTC datetime a schedule should fire, strictly after `after`.
+
+    `time_str` is HH:MM in the schedule's own timezone. daily = every day at that
+    time; weekly = on each listed day-of-week (Mon=0…Sun=6) at that time.
+    """
+    hh, mm = _parse_hhmm(time_str)
+    tz = ZoneInfo(normalize_timezone(timezone_name))
+    after = (after or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    local_after = after.astimezone(tz)
+    if (frequency or "daily").lower() == "weekly":
+        days = sorted(set(days_of_week or []))
+        if not days:
+            raise ValueError("weekly schedule requires at least one day of week")
+    else:
+        days = list(range(7))  # daily = every day
+    # Scan forward up to 8 days for the next matching (day, time) strictly after `after`.
+    for delta in range(0, 8):
+        d = (local_after + timedelta(days=delta)).date()
+        if d.weekday() not in days:
+            continue
+        candidate = datetime(d.year, d.month, d.day, hh, mm, tzinfo=tz).astimezone(timezone.utc)
+        if candidate > after:
+            return candidate
+    raise RuntimeError("could not compute next run within 8 days")  # unreachable
+
+
+def schedule_summary(s: dict) -> str:
+    """One-line human description of a schedule's cadence, e.g. 'Daily at 08:00 (UTC)'."""
+    freq = (s.get("frequency") or "daily").lower()
+    tz = s.get("timezone") or "UTC"
+    when = s.get("time") or "??:??"
+    if freq == "weekly":
+        days = ", ".join(DAY_NAMES[d] for d in sorted(s.get("daysOfWeek") or []) if 0 <= d <= 6)
+        return f"Weekly on {days or '—'} at {when} ({tz})"
+    return f"Daily at {when} ({tz})"

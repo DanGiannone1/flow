@@ -100,6 +100,11 @@ How you work:
   group/due date, `add_subtask` to add a subtask, and `delete_task` to remove one.
 - Events: use `list_events` to review the calendar, `create_event` to schedule one (a date
   is required), `update_event` to move or change it, and `delete_event` to remove one.
+- Reminders: use `create_schedule` for recurring requests the user wants to receive by email
+  ("email me a daily summary", "every Monday send me…") — capture the instruction as the
+  `prompt`, pick `daily`/`weekly`, a `time` (HH:MM), and a `timezone` if the user implies one
+  (ask only if genuinely unclear). Use `list_schedules` to review and `delete_schedule` to
+  cancel. The app runs the saved prompt on the cadence and emails whatever it produces.
 - For "what's overdue", use the `overdue` flag from `list_tasks` and the "[Today: …]"
   context — never judge dates yourself.
 - To write or revise a document (a brief, notes, a summary), use `write_file` — it appears
@@ -387,6 +392,23 @@ class DeleteEventParams(BaseModel):
 
 class SearchDocumentsParams(BaseModel):
     query: str = Field(description="What to look for in the document library, in natural language, e.g. 'what did we decide about the budget' or 'kickoff goals'")
+
+
+class CreateScheduleParams(BaseModel):
+    title: str = Field(description="Short name for the reminder, e.g. 'Daily agenda email'")
+    prompt: str = Field(description="The instruction to run on the schedule, phrased as you'd ask the assistant, e.g. 'Summarize my agenda and any tasks or events due in the next 3 days'. Its output is emailed to the user.")
+    frequency: str = Field(description="'daily' or 'weekly'")
+    time: str = Field(description="Time of day to run, 24h HH:MM, e.g. '08:00'")
+    timezone: str = Field(default="UTC", description="IANA timezone for the time, e.g. 'America/New_York'. Defaults to UTC if unknown.")
+    days: str = Field(default="", description="For weekly only: comma-separated day names, e.g. 'Mon,Wed,Fri'. Ignored for daily.")
+
+
+class ListSchedulesParams(BaseModel):
+    pass
+
+
+class DeleteScheduleParams(BaseModel):
+    schedule: str = Field(description="Schedule id or a distinctive part of its title")
 
 
 # ── Tool builders (closures over the session workspace) ─────────────────────
@@ -692,12 +714,92 @@ def _build_flow_tools(working_dir: str) -> list:
             return "QUERY_REQUIRED: provide what to search for."
         return _search_documents_query(query)
 
+    @define_tool(name="create_schedule", description="Create a scheduled reminder: a saved instruction the app runs automatically on a daily or weekly cadence and emails the result to the user. Use for 'email me a daily summary', 'remind me every Monday', etc.")
+    def create_schedule(params: CreateScheduleParams) -> str:
+        title = params.title.strip()
+        prompt = params.prompt.strip()
+        if not title:
+            return "TITLE_REQUIRED: the reminder needs a short name."
+        if not prompt:
+            return "PROMPT_REQUIRED: the reminder needs an instruction to run."
+        frequency = params.frequency.strip().lower()
+        if frequency not in appdb.SCHEDULE_FREQUENCIES:
+            return f"BAD_FREQUENCY: use one of {appdb.SCHEDULE_FREQUENCIES}."
+        try:
+            timezone_name = appdb.normalize_timezone(params.timezone)
+        except ValueError as exc:
+            return f"BAD_TIMEZONE: {exc}"
+        days_of_week: list[int] = []
+        if frequency == "weekly":
+            name_to_idx = {n.lower(): i for i, n in enumerate(appdb.DAY_NAMES)}
+            for tok in params.days.split(","):
+                key = tok.strip().lower()[:3]
+                if key and key in name_to_idx:
+                    days_of_week.append(name_to_idx[key])
+            days_of_week = sorted(set(days_of_week))
+            if not days_of_week:
+                return "DAYS_REQUIRED: a weekly reminder needs day(s), e.g. 'Mon,Fri'."
+        try:
+            next_run = appdb.compute_next_run(frequency, params.time, timezone_name, days_of_week)
+        except (ValueError, RuntimeError) as exc:
+            return f"BAD_TIME: {exc}"
+        data = _load()
+        schedule = {
+            "id": appdb.new_id("s", data["schedules"]),
+            "title": title,
+            "prompt": prompt,
+            "frequency": frequency,
+            "time": params.time.strip(),
+            "timezone": timezone_name,
+            "daysOfWeek": days_of_week,
+            "enabled": True,
+            "channel": "email",
+            "createdAt": appdb._now_iso(),
+            "lastRunAt": None,
+            "lastStatus": None,
+            "nextRunAt": next_run.isoformat(),
+        }
+        data["schedules"].append(schedule)
+        data["currentRoute"] = "/reminders"
+        _save(data)
+        return (
+            f"CREATED reminder [{schedule['id']}] '{title}' — {appdb.schedule_summary(schedule)}. "
+            f"Next run {schedule['nextRunAt']}. It will email the result of: {prompt}"
+        )
+
+    @define_tool(name="list_schedules", description="List the scheduled reminders with their cadence, next run time, and status.")
+    def list_schedules(params: ListSchedulesParams) -> str:
+        schedules = _load()["schedules"]
+        if not schedules:
+            return "No reminders yet."
+        lines = [f"{len(schedules)} reminder(s):"]
+        for s in schedules:
+            state = "enabled" if s.get("enabled") else "paused"
+            last = s.get("lastRunAt") or "never"
+            lines.append(
+                f"- [{s['id']}] {s['title']} | {appdb.schedule_summary(s)} | {state} | "
+                f"next={s.get('nextRunAt') or 'n/a'} | last={last} | runs: {s['prompt']}"
+            )
+        return "\n".join(lines)
+
+    @define_tool(name="delete_schedule", description="Delete a scheduled reminder.")
+    def delete_schedule(params: DeleteScheduleParams) -> str:
+        data = _load()
+        s = appdb.resolve_schedule(data, params.schedule)
+        if s is None:
+            return f"NOT_FOUND: no reminder matches '{params.schedule}'."
+        data["schedules"] = [x for x in data["schedules"] if x["id"] != s["id"]]
+        data["currentRoute"] = "/reminders"
+        _save(data)
+        return f"DELETED reminder [{s['id']}] '{s['title']}'."
+
     return [
         navigate,
         list_tasks, create_task, update_task, delete_task, add_subtask,
         list_events, create_event, update_event, delete_event,
         list_documents, read_workspace_file, write_file,
         search_documents,
+        create_schedule, list_schedules, delete_schedule,
     ]
 
 

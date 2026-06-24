@@ -3,6 +3,7 @@
 Proxies all AI interactions to isolated session containers via SessionManager.
 """
 
+import asyncio
 import logging
 import os
 import time
@@ -121,10 +122,19 @@ async def lifespan(app: FastAPI):
 
     session_manager = SessionManager(content_processor)
     await session_manager.start()
+
+    # Background reminder scheduler — runs due reminders and emails their output.
+    import scheduler
+    scheduler_task = asyncio.create_task(scheduler.scheduler_loop(session_manager))
     logger.info("Application started")
 
     yield
 
+    scheduler_task.cancel()
+    try:
+        await scheduler_task
+    except asyncio.CancelledError:
+        pass
     await session_manager.stop()
     await content_processor.close()
     logger.info("Application shut down")
