@@ -92,16 +92,74 @@ async def _run_prompt(session_manager, prompt: str) -> str:
             logger.warning("scheduler: failed to clean up session %s", sid, exc_info=True)
 
 
+def _claim(doc: dict, schedule: dict, now: datetime) -> bool:
+    """Mutator: claim a reminder's slot BEFORE sending — stamp lastRunAt and advance
+    nextRunAt so a later send failure or crash can't re-fire it (delivery is at-most-once).
+    Disables the reminder if its cadence can no longer be computed. Re-entrant for retry."""
+    cur = appdb.find_schedule(doc, schedule["id"])
+    if cur is None:  # deleted mid-run
+        raise appdb.AbortWrite(False)
+    cur["lastRunAt"] = now.isoformat()
+    cur["lastStatus"] = "running"
+    try:
+        cur["nextRunAt"] = appdb.compute_next_run(
+            cur["frequency"], cur["time"], cur.get("timezone", "UTC"),
+            cur.get("daysOfWeek"), after=now,
+        ).isoformat()
+    except Exception:
+        logger.error("scheduler: cannot reschedule %s — disabling it", schedule["id"], exc_info=True)
+        cur["enabled"] = False
+    return True
+
+
+def _set_status(doc: dict, schedule: dict, status: str) -> None:
+    """Mutator: record a reminder's final run status (best-effort; no effect on scheduling)."""
+    cur = appdb.find_schedule(doc, schedule["id"])
+    if cur is None:
+        raise appdb.AbortWrite(None)
+    cur["lastStatus"] = status[:240]
+
+
+def _disable_broken(doc: dict, schedule: dict) -> None:
+    """Mutator: surface a reminder whose nextRunAt is unparseable — disable it + record why,
+    instead of silently never firing (only the log would show it otherwise)."""
+    cur = appdb.find_schedule(doc, schedule["id"])
+    if cur is None:
+        raise appdb.AbortWrite(None)
+    cur["lastStatus"] = "error: unparseable nextRunAt"
+    cur["enabled"] = False
+
+
 async def run_due_once(session_manager, *, now: datetime | None = None) -> int:
     """Run every reminder whose nextRunAt is due. Returns the count emailed."""
     now = now or datetime.now(timezone.utc)
     data = await asyncio.to_thread(appdb.load)
+    schedules = data.get("schedules", [])
+
+    # Surface (don't silently drop) reminders with a corrupt nextRunAt — disable + record so
+    # the dead state shows on the reminder itself, not just in a log line every tick.
+    for s in schedules:
+        if s.get("enabled") and s.get("nextRunAt") and _parse_iso(s.get("nextRunAt")) is None:
+            try:
+                await asyncio.to_thread(appdb.update, lambda doc, sc=s: _disable_broken(doc, sc))
+            except Exception:
+                logger.error("scheduler: could not disable broken reminder %s", s["id"], exc_info=True)
+
     due = [
-        s for s in data.get("schedules", [])
+        s for s in schedules
         if s.get("enabled") and (dt := _parse_iso(s.get("nextRunAt"))) and dt <= now
     ]
     emailed = 0
     for s in due:
+        # Claim the slot first (advance nextRunAt). A write failure here means we simply
+        # haven't sent yet — retry next tick, no duplicate. A send/crash after claiming
+        # cannot re-fire, so delivery is at-most-once (no duplicate emails).
+        try:
+            await asyncio.to_thread(appdb.update, lambda doc, sc=s: _claim(doc, sc, now))
+        except Exception:
+            logger.error("scheduler: could not claim reminder %s — will retry next tick", s["id"], exc_info=True)
+            continue
+
         status = "ok"
         try:
             body = await _run_prompt(session_manager, s["prompt"])
@@ -115,24 +173,12 @@ async def run_due_once(session_manager, *, now: datetime | None = None) -> int:
             status = f"error: {exc}"
             logger.error("scheduler: reminder %s failed: %s", s["id"], exc, exc_info=True)
 
-        # Concurrency-safe write (ETag + retry): stamp lastRun/status and reschedule, without
-        # clobbering a concurrent agent edit to the same owner doc.
-        def _reschedule(doc, _s=s, _status=status):
-            cur = appdb.find_schedule(doc, _s["id"])
-            if cur is None:  # deleted mid-run — nothing to write
-                raise appdb.AbortWrite(None)
-            cur["lastRunAt"] = now.isoformat()
-            cur["lastStatus"] = _status[:240]
-            try:
-                cur["nextRunAt"] = appdb.compute_next_run(
-                    cur["frequency"], cur["time"], cur.get("timezone", "UTC"),
-                    cur.get("daysOfWeek"), after=now,
-                ).isoformat()
-            except Exception:
-                logger.error("scheduler: cannot reschedule %s — disabling it", _s["id"], exc_info=True)
-                cur["enabled"] = False
-            return None
-        await asyncio.to_thread(appdb.update, _reschedule)
+        # Record the outcome (best-effort — already claimed, so a failure here only leaves the
+        # status stale, never double-sends).
+        try:
+            await asyncio.to_thread(appdb.update, lambda doc, sc=s, st=status: _set_status(doc, sc, st))
+        except Exception:
+            logger.error("scheduler: could not record status for %s", s["id"], exc_info=True)
     return emailed
 
 

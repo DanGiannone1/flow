@@ -127,8 +127,12 @@ def ensure_seeded() -> dict:
         return _doc_to_state(container.read_item(item=oid, partition_key=oid))
     except cosmos_exceptions.CosmosResourceNotFoundError:
         data = _seed()
-        container.create_item({"id": oid, "sessionId": oid, **data})
-        return data
+        try:
+            container.create_item({"id": oid, "sessionId": oid, **data})
+            return data
+        except cosmos_exceptions.CosmosResourceExistsError:
+            # Lost the create race to another writer — read the winner's doc.
+            return _doc_to_state(container.read_item(item=oid, partition_key=oid))
 
 
 def load() -> dict:

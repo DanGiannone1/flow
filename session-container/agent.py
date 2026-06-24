@@ -422,7 +422,12 @@ def _build_flow_tools(working_dir: str) -> list:
     def _update(mutator):
         """Concurrency-safe owner-doc mutation (ETag + retry, see appdb.update).
         `mutator(data)` mutates and returns the tool's result string; raise
-        appdb.AbortWrite(msg) to return a message without writing (validation/no-op)."""
+        appdb.AbortWrite(msg) to return a message without writing (validation/no-op).
+
+        Validation rule for tools: input-only checks (no doc needed — empty title, bad
+        frequency) return early BEFORE _update; checks that inspect the current doc
+        (resolve-by-ref, ambiguity, not-found) raise AbortWrite INSIDE the mutator so they
+        re-evaluate against the fresh read on each retry."""
         return appdb.update(mutator)
 
     def _resolve_task_strict(data: dict, ref: str):
