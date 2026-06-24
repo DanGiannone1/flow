@@ -32,7 +32,7 @@ Session container (FastAPI):8080  [session-container/server.py, agent.py]  — r
 Azure OpenAI (gpt-4.1)   + Azure AI Search (RAG only)
 ```
 
-- **Per-session app state (tasks/events/currentRoute/routes) lives in Azure Cosmos DB** — one document per session, keyed by session id, AAD-only (`DefaultAzureCredential`; no key). The agent's tools mutate it and `/app/state` reads from it, so the verifiable-execution invariant holds against Cosmos.
+- **Owner app state (tasks/events/currentRoute/routes) lives in Azure Cosmos DB** — one document keyed by a **stable owner id** (`COSMOS_OWNER_ID`, default `owner`), not the ephemeral session id. Flow is one person's workspace, so the same document loads on every visit and persists across sessions/tabs/restarts. AAD-only (`DefaultAzureCredential`; no key). The agent's tools mutate it and `/app/state` reads from it, so the verifiable-execution invariant holds against Cosmos. Swap the key to the Entra `oid` for multi-user.
 - **Documents/files live in the per-session workspace folder** (→ ACA Sandbox in production). Uploads and agent-drafted artifacts stay on the filesystem, separate from the structured store.
 - Authoritative architecture reference: `.claude/commands/architecture/*`. This reskin changes **entities, screens, theme** — not topology.
 
@@ -210,7 +210,7 @@ Validated **only** via Playwright against the real frontend, as a real user, wit
 
 ## 12. Non-goals / guardrails
 
-- No real auth, no database, no multi-user — per-session sandbox only.
+- No real auth, no multi-user yet — single owner. App state persists in Cosmos under a stable owner key; chat history + uploaded files remain per-session. Multi-user = swap the owner key to the Entra `oid`.
 - **Public repo hygiene:** never commit real personal data or any client/vendor branding. Seed data is synthetic-but-realistic. Demo on real data only via gitignored local content. (See memory: pre-push-scrub.)
 - No new architectural abstractions — reskin within the existing harness (Simplify First).
 - Tax domain fully removed.

@@ -157,7 +157,7 @@ async def create_session(request: Request) -> dict:
     session_id = _get_identifier(request)
     workspace = Path(_session_workspace(session_id))
     workspace.mkdir(parents=True, exist_ok=True)
-    appdb.ensure_seeded(str(workspace))
+    appdb.ensure_seeded()
     _ensure_documents_seeded(str(workspace))
     trace_event("session", "session.created", session_id=session_id, workspace=str(workspace))
     return {"session_id": session_id, "status": "active"}
@@ -175,7 +175,7 @@ async def app_state(request: Request) -> dict:
     _require_existing_session(session_id)
     workspace = _session_workspace(session_id)
     _ensure_documents_seeded(workspace)  # lazy-seed docs for restored/reset sessions
-    return appdb.load(workspace)
+    return appdb.load()
 
 
 @app.get("/session")

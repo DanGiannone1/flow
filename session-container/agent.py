@@ -395,10 +395,10 @@ def _build_flow_tools(working_dir: str) -> list:
     workspace_root = Path(working_dir).resolve()
 
     def _load() -> dict:
-        return appdb.load(str(workspace_root))
+        return appdb.load()
 
     def _save(data: dict) -> None:
-        appdb.save(str(workspace_root), data)
+        appdb.save(data)
 
     def _resolve_task_strict(data: dict, ref: str):
         """Resolve a task ref to (task, error). Prefer exact id/title; fall back to a

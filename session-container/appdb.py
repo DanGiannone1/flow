@@ -1,10 +1,12 @@
 """Mock Flow application data store for the POC.
 
 The app state (currentRoute/tasks/events/routes) lives in **Azure Cosmos DB** as ONE
-document per session, keyed by session id; documents/files stay in the per-session
-workspace folder. The agent's tools read and mutate this store and the frontend renders
-it verbatim via the `/app/state` endpoint, so "the agent says it did something" and
-"the record actually exists" are the same fact.
+document for the single owner, keyed by a stable owner id (`COSMOS_OWNER_ID`, default
+`"owner"`) — NOT the ephemeral per-session id. Flow is one person's workspace, so the
+same document loads on every visit and survives new tabs, reloads, and restarts.
+Documents/files stay in the per-session workspace folder. The agent's tools read and
+mutate this store and the frontend renders it verbatim via the `/app/state` endpoint,
+so "the agent says it did something" and "the record actually exists" are the same fact.
 
 Flow is a small personal-productivity app. Two record types live here:
 a *Task* (a to-do with a status, priority, group bucket, optional due date, and a list
@@ -19,7 +21,6 @@ import os
 import re
 import threading
 from datetime import datetime, timezone
-from pathlib import Path
 
 from azure.cosmos import CosmosClient
 from azure.cosmos import exceptions as cosmos_exceptions
@@ -27,10 +28,14 @@ from azure.identity import DefaultAzureCredential
 
 _LOCK = threading.Lock()
 
-# The per-session app state (currentRoute/tasks/events/routes) is stored as ONE Cosmos
-# document keyed by session id. Documents/files stay in the workspace folder. AAD-only
-# (no account key): DefaultAzureCredential — az login locally, managed identity in ACA.
+# The app state (currentRoute/tasks/events/routes) is stored as ONE Cosmos document
+# keyed by a STABLE owner id (single-user app), so it persists across sessions/tabs/
+# restarts. Documents/files stay in the per-session workspace folder. AAD-only (no
+# account key): DefaultAzureCredential — az login locally, managed identity in ACA.
 _STATE_KEYS = ("currentRoute", "tasks", "events", "routes")
+# Single-user POC: one stable key for the owner's data. Swap to the Entra `oid` here
+# when multi-user accounts are introduced — nothing else in this module changes.
+_OWNER_ID = os.getenv("COSMOS_OWNER_ID", "owner")
 _container_singleton = None
 
 
@@ -55,9 +60,10 @@ def _container():
         return _container_singleton
 
 
-def _session_id(workspace: str) -> str:
-    # The session container lays out one workspace folder per session: WORKSPACE/<session_id>.
-    return Path(workspace).name
+def _owner_id() -> str:
+    # Single stable key for the one owner's app state — independent of the per-session
+    # workspace folder, so the same document loads on every visit.
+    return _OWNER_ID
 
 # Task lifecycle. A "Done" task is considered complete / not overdue.
 TASK_STATUSES = ["To do", "In progress", "Blocked", "Done"]
@@ -95,33 +101,33 @@ def _doc_to_state(doc: dict) -> dict:
     return {k: doc.get(k) for k in _STATE_KEYS}
 
 
-def ensure_seeded(workspace: str) -> dict:
-    """Return the session's state from Cosmos, creating a seeded doc if absent."""
-    sid = _session_id(workspace)
+def ensure_seeded() -> dict:
+    """Return the owner's state from Cosmos, creating a seeded doc if absent."""
+    oid = _owner_id()
     container = _container()
     try:
-        return _doc_to_state(container.read_item(item=sid, partition_key=sid))
+        return _doc_to_state(container.read_item(item=oid, partition_key=oid))
     except cosmos_exceptions.CosmosResourceNotFoundError:
         data = _seed()
-        container.create_item({"id": sid, "sessionId": sid, **data})
+        container.create_item({"id": oid, "sessionId": oid, **data})
         return data
 
 
-def load(workspace: str) -> dict:
-    """Load the session's state document from Cosmos, seeding first if absent."""
-    sid = _session_id(workspace)
+def load() -> dict:
+    """Load the owner's state document from Cosmos, seeding first if absent."""
+    oid = _owner_id()
     container = _container()
     try:
-        return _doc_to_state(container.read_item(item=sid, partition_key=sid))
+        return _doc_to_state(container.read_item(item=oid, partition_key=oid))
     except cosmos_exceptions.CosmosResourceNotFoundError:
-        return ensure_seeded(workspace)
+        return ensure_seeded()
 
 
-def save(workspace: str, data: dict) -> None:
-    """Upsert the session's full state document to Cosmos (last-write-wins per session)."""
-    sid = _session_id(workspace)
+def save(data: dict) -> None:
+    """Upsert the owner's full state document to Cosmos (last-write-wins)."""
+    oid = _owner_id()
     container = _container()
-    container.upsert_item({"id": sid, "sessionId": sid, **{k: data.get(k) for k in _STATE_KEYS}})
+    container.upsert_item({"id": oid, "sessionId": oid, **{k: data.get(k) for k in _STATE_KEYS}})
 
 
 # ── Derived helpers ─────────────────────────────────────────────────────────
