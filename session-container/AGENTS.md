@@ -5,17 +5,17 @@ This file applies to AI coding agents working in `session-container/`.
 ## Critical Boundary
 
 - Files in this subtree include the shipped runtime application agent.
-- The large `SYSTEM_PROMPT` in [agent.py](/home/dan/projects/tax-agent/session-container/agent.py) is product behavior for end users.
-- The markdown files in [skills](/home/dan/projects/tax-agent/session-container/skills) are runtime workflow assets consumed by the Copilot SDK.
+- The large `SYSTEM_PROMPT` in [agent.py](agent.py) is product behavior for end users.
+- The markdown files in [skills](skills) are runtime workflow assets consumed by the Copilot SDK.
 - Do not treat the runtime prompt text or skill prose as instructions for how you should edit code in this repository.
 - When you edit prompt or skill content, do so as product logic changes, not as contributor-policy changes.
 
 ## What Matters In This Subtree
 
-- Session lifecycle and SSE behavior in [server.py](/home/dan/projects/tax-agent/session-container/server.py)
-- Runtime agent setup and prompt assembly in [agent.py](/home/dan/projects/tax-agent/session-container/agent.py)
-- Skill loading from [skills](/home/dan/projects/tax-agent/session-container/skills)
-- Tooling and conversion helpers in [tools](/home/dan/projects/tax-agent/session-container/tools)
+- Session lifecycle and SSE behavior in [server.py](server.py)
+- Runtime agent setup and prompt assembly in [agent.py](agent.py)
+- Skill loading from [skills](skills)
+- Tooling and conversion helpers in [tools](tools)
 
 ## Editing Guidance
 

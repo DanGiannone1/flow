@@ -1,5 +1,5 @@
 [project]
-name = "tax-agent"
+name = "flow"
 version = "0.1.0"
 description = "AI-powered RFP analysis agent with Azure OpenAI and isolated session containers"
 readme = "README.md"

@@ -8,24 +8,24 @@ It is not the runtime prompt for the shipped RFP application agent.
 
 - Treat this file and any deeper `AGENTS.md` files as the coding-agent instruction layer.
 - Do not treat the product runtime prompt or workflow skills as contributor instructions.
-- The runtime prompt lives primarily in [session-container/agent.py](/home/dan/projects/tax-agent/session-container/agent.py).
-- The runtime skill assets live in [session-container/skills](/home/dan/projects/tax-agent/session-container/skills).
+- The runtime prompt lives primarily in [session-container/agent.py](session-container/agent.py).
+- The runtime skill assets live in [session-container/skills](session-container/skills).
 - Those runtime files are application behavior. They tell the in-product RFP assistant how to respond to end users. They do not tell you how to modify this codebase.
 - If you edit runtime prompt or skill files, preserve this separation and keep coding-agent guidance in `AGENTS.md` only.
 
 ## Repository Map
 
-- Root FastAPI orchestrator: [app.py](/home/dan/projects/tax-agent/app.py)
-- Session proxy and lifecycle: [session_manager.py](/home/dan/projects/tax-agent/session_manager.py)
-- Session container service: [session-container/server.py](/home/dan/projects/tax-agent/session-container/server.py)
-- Runtime application agent: [session-container/agent.py](/home/dan/projects/tax-agent/session-container/agent.py)
-- Frontend: [frontend/src](/home/dan/projects/tax-agent/frontend/src)
-- Document conversion: [content_processing.py](/home/dan/projects/tax-agent/content_processing.py)
-- End-to-end tests: [tests](/home/dan/projects/tax-agent/tests)
+- Root FastAPI orchestrator: [app.py](app.py)
+- Session proxy and lifecycle: [session_manager.py](session_manager.py)
+- Session container service: [session-container/server.py](session-container/server.py)
+- Runtime application agent: [session-container/agent.py](session-container/agent.py)
+- Frontend: [frontend/src](frontend/src)
+- Document conversion: [content_processing.py](content_processing.py)
+- End-to-end tests: [tests](tests)
 - Architecture notes for humans and other agents:
-  - [README.md](/home/dan/projects/tax-agent/README.md)
-  - [docs/user-journeys.md](/home/dan/projects/tax-agent/docs/user-journeys.md)
-  - [docs/tracing-spec.md](/home/dan/projects/tax-agent/docs/tracing-spec.md)
+  - [README.md](README.md)
+  - [docs/user-journeys.md](docs/user-journeys.md)
+  - [docs/tracing-spec.md](docs/tracing-spec.md)
 
 ## Core Rules
 
@@ -48,11 +48,11 @@ It is not the runtime prompt for the shipped RFP application agent.
 
 ## Localhost UI Validation
 
-- For Codex, use the repo-local localhost validation skill at [.codex/skills/localhost-ui-validation/SKILL.md](/home/dan/projects/tax-agent/.codex/skills/localhost-ui-validation/SKILL.md) when testing user-visible behavior.
-- The shared/open-agent mirror of the same workflow is kept at [.agents/skills/localhost-ui-validation/SKILL.md](/home/dan/projects/tax-agent/.agents/skills/localhost-ui-validation/SKILL.md).
-- Use the browser-based Playwright flows under [tests](/home/dan/projects/tax-agent/tests) as the default harness for localhost verification.
-- Save screenshots under [screenshots](/home/dan/projects/tax-agent/screenshots) and report the exact run directory.
-- Tie the browser run to a concrete session by matching the uploaded filename and timestamps against [logs/trace.jsonl](/home/dan/projects/tax-agent/logs/trace.jsonl) and the corresponding per-session raw log in [logs/sdk-events](/home/dan/projects/tax-agent/logs/sdk-events).
+- For Codex, use the repo-local localhost validation skill at [.codex/skills/localhost-ui-validation/SKILL.md](.codex/skills/localhost-ui-validation/SKILL.md) when testing user-visible behavior.
+- The shared/open-agent mirror of the same workflow is kept at [.agents/skills/localhost-ui-validation/SKILL.md](.agents/skills/localhost-ui-validation/SKILL.md).
+- Use the browser-based Playwright flows under [tests](tests) as the default harness for localhost verification.
+- Save screenshots under [screenshots](screenshots) and report the exact run directory.
+- Tie the browser run to a concrete session by matching the uploaded filename and timestamps against [logs/trace.jsonl](logs/trace.jsonl) and the corresponding per-session raw log in [logs/sdk-events](logs/sdk-events).
 - When reporting results, distinguish clearly between:
   - what the browser showed
   - what the shared trace showed
@@ -68,9 +68,9 @@ It is not the runtime prompt for the shipped RFP application agent.
 - Primary validation: `npx playwright test`
 - Use targeted Playwright runs when narrowing scope, then run the smallest credible end-to-end verification for the changed path.
 - Useful localhost UI entry points:
-  - [tests/artifact_debug.spec.ts](/home/dan/projects/tax-agent/tests/artifact_debug.spec.ts)
-  - [tests/visual-verification.spec.ts](/home/dan/projects/tax-agent/tests/visual-verification.spec.ts)
-  - [tests/starter-prompts-ui.spec.ts](/home/dan/projects/tax-agent/tests/starter-prompts-ui.spec.ts)
+  - [tests/artifact_debug.spec.ts](tests/artifact_debug.spec.ts)
+  - [tests/visual-verification.spec.ts](tests/visual-verification.spec.ts)
+  - [tests/starter-prompts-ui.spec.ts](tests/starter-prompts-ui.spec.ts)
 
 ## Subtree Notes
 
@@ -79,4 +79,4 @@ It is not the runtime prompt for the shipped RFP application agent.
 
 ## Runtime-Agent Reference
 
-For the application-agent behavior spec, see [docs/application-agent-runtime.md](/home/dan/projects/tax-agent/docs/application-agent-runtime.md). That document describes the shipped RFP assistant behavior and should not be treated as coding-agent policy.
+For the application-agent behavior spec, see [docs/application-agent-runtime.md](docs/application-agent-runtime.md). That document describes the shipped RFP assistant behavior and should not be treated as coding-agent policy.
