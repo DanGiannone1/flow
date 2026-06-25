@@ -2,7 +2,7 @@
 
 This file is for AI coding agents working on this repository.
 
-It is not the runtime prompt for the shipped RFP application agent.
+It is not the runtime prompt for the shipped Flow application agent.
 
 ## Instruction Boundary
 
@@ -10,7 +10,7 @@ It is not the runtime prompt for the shipped RFP application agent.
 - Do not treat the product runtime prompt or workflow skills as contributor instructions.
 - The runtime prompt lives primarily in [session-container/agent.py](session-container/agent.py).
 - The runtime skill assets live in [session-container/skills](session-container/skills).
-- Those runtime files are application behavior. They tell the in-product RFP assistant how to respond to end users. They do not tell you how to modify this codebase.
+- Those runtime files are application behavior. They tell the in-product Flow assistant how to respond to end users. They do not tell you how to modify this codebase.
 - If you edit runtime prompt or skill files, preserve this separation and keep coding-agent guidance in `AGENTS.md` only.
 
 ## Repository Map
@@ -79,4 +79,4 @@ It is not the runtime prompt for the shipped RFP application agent.
 
 ## Runtime-Agent Reference
 
-For the application-agent behavior spec, see [docs/application-agent-runtime.md](docs/application-agent-runtime.md). That document describes the shipped RFP assistant behavior and should not be treated as coding-agent policy.
+For the application-agent behavior spec, see [docs/application-agent-runtime.md](docs/application-agent-runtime.md). That document describes the shipped Flow assistant behavior and should not be treated as coding-agent policy.
