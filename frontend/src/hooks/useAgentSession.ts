@@ -481,8 +481,8 @@ export function useAgentSession() {
   const removeFromLibrary = useCallback(async (filename: string) => {
     if (!state.sessionId) return;
     await apiDeleteFromLibrary(state.sessionId, filename);
-    await refreshAppState(state.sessionId);
-  }, [state.sessionId, refreshAppState]);
+    await Promise.all([refreshAppState(state.sessionId), refreshFiles(state.sessionId)]);
+  }, [state.sessionId, refreshAppState, refreshFiles]);
 
   const handleStop = useCallback(() => {
     if (streamingRef.current) {  // synchronous — not the render-captured state

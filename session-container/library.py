@@ -17,9 +17,11 @@ Fails loud: every non-success path returns a leading status marker; never fabric
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
+from pathlib import Path
 
 import httpx
 
@@ -28,6 +30,8 @@ logger = logging.getLogger(__name__)
 INDEX_NAME = "flow-documents-index"
 SEMANTIC_CONFIG = "flow-semantic"
 API_VERSION = "2024-07-01"
+MAX_CONTENT_BYTES = 2_000_000   # cap a promotable doc (matches the viewer's 2MB read cap)
+MAX_CHUNKS = 800                # keep a doc under the single-query top:1000 ceiling
 
 
 def _config() -> tuple[str, str]:
@@ -53,6 +57,12 @@ def _client() -> httpx.Client:
 def _slug(filename: str) -> str:
     """Search doc keys allow only letters/digits/_/-/=; make a safe id prefix."""
     return re.sub(r"[^A-Za-z0-9_\-=]", "_", filename)
+
+
+def _odata(value: str) -> str:
+    """Escape a string literal for an OData filter — single quotes are doubled. Prevents a
+    filename like o'brien.md from breaking (or injecting into) the `filename eq '...'` filter."""
+    return value.replace("'", "''")
 
 
 def title_from_filename(filename: str) -> str:
@@ -108,37 +118,49 @@ def ensure_index() -> None:
             raise RuntimeError(f"INDEX_ENSURE_FAILED: {resp.status_code} {resp.text[:300]}")
 
 
+def _doc_id(filename: str, idx: int) -> str:
+    """Chunk id = slug + short filename hash + index. The hash keeps distinct filenames that
+    slug to the same prefix (e.g. 'a/b.md' and 'a_b.md') from colliding on the same keys."""
+    h = hashlib.sha1(filename.encode("utf-8")).hexdigest()[:8]
+    return f"{_slug(filename)}-{h}--{idx}"
+
+
 def _chunk_ids(filename: str) -> list[str]:
-    """All current chunk ids for a filename (so we can replace cleanly on re-index/delete)."""
-    slug = _slug(filename)
+    """All current chunk ids for a filename, via an exact (escaped) filename filter — works
+    regardless of the id scheme that wrote them. Fails loud on a Search error rather than
+    silently returning [] (which would make delete look successful while removing nothing)."""
     with _client() as c:
         resp = c.post(
             f"/indexes/{INDEX_NAME}/docs/search",
             params={"api-version": API_VERSION},
-            json={"search": "*", "filter": f"filename eq '{filename}'", "select": "id", "top": 1000},
+            json={"search": "*", "filter": f"filename eq '{_odata(filename)}'", "select": "id", "top": 1000},
         )
     if resp.status_code != 200:
-        return []
-    return [r["id"] for r in resp.json().get("value", []) if r.get("id", "").startswith(slug + "--")]
+        raise RuntimeError(f"SEARCH_FAILED: {resp.status_code} {resp.text[:200]}")
+    return [r["id"] for r in resp.json().get("value", [])]
 
 
-def index_document(filename: str, title: str, text: str, source: str = "library") -> int:
-    """Chunk `text` and (re)index it under `filename`. Replaces any existing chunks for
-    that filename so re-saving is idempotent. Returns the chunk count."""
+def index_document(filename: str, title: str, text: str) -> int:
+    """Chunk `text` and (re)index it under `filename`, replacing any prior chunks for that
+    filename (idempotent). Returns the chunk count. Fails loud on oversized input."""
+    if len(text.encode("utf-8")) > MAX_CONTENT_BYTES:
+        raise RuntimeError(f"LIBRARY_TOO_LARGE: document exceeds {MAX_CONTENT_BYTES // 1_000_000}MB.")
     ensure_index()
     chunks = chunk_markdown(text)
     if not chunks:
         raise RuntimeError("EMPTY_DOCUMENT: nothing to index (no text content).")
-    slug = _slug(filename)
+    if len(chunks) > MAX_CHUNKS:
+        raise RuntimeError(f"LIBRARY_TOO_LARGE: document produced {len(chunks)} chunks (max {MAX_CHUNKS}).")
+    new_ids = {_doc_id(filename, i) for i in range(len(chunks))}
     actions: list[dict] = []
-    # Remove stale chunks from a prior version of this file.
+    # Remove stale chunks from a prior version of this file (exact match, any prior id scheme).
     for old_id in _chunk_ids(filename):
-        if old_id not in {f"{slug}--{i}" for i in range(len(chunks))}:
+        if old_id not in new_ids:
             actions.append({"@search.action": "delete", "id": old_id})
     for idx, chunk in enumerate(chunks):
         actions.append({
             "@search.action": "mergeOrUpload",
-            "id": f"{slug}--{idx}",
+            "id": _doc_id(filename, idx),
             "filename": filename,
             "title": title,
             "chunk": chunk,
@@ -167,22 +189,37 @@ def delete_document(filename: str) -> int:
 
 
 def get_document_text(filename: str) -> str | None:
-    """Reconstruct a Library doc's text from its indexed chunks (for the viewer).
-    Returns None if the filename has no chunks."""
-    slug = _slug(filename)
+    """Reconstruct a Library doc's text from its indexed chunks for the viewer. Best-effort
+    rejoin (inter-chunk whitespace is normalized) — NOT the byte-exact original. Returns
+    None if the filename has no chunks."""
     with _client() as c:
         resp = c.post(
             f"/indexes/{INDEX_NAME}/docs/search",
             params={"api-version": API_VERSION},
-            json={"search": "*", "filter": f"filename eq '{filename}'", "select": "id,chunk", "top": 1000},
+            json={"search": "*", "filter": f"filename eq '{_odata(filename)}'", "select": "id,chunk", "top": 1000},
         )
     if resp.status_code != 200:
         raise RuntimeError(f"SEARCH_FAILED: {resp.status_code} {resp.text[:200]}")
-    rows = [r for r in resp.json().get("value", []) if r.get("id", "").startswith(slug + "--")]
+    rows = resp.json().get("value", [])
     if not rows:
         return None
     rows.sort(key=lambda r: int(r["id"].rsplit("--", 1)[-1]))
     return "\n\n".join(r.get("chunk", "") for r in rows).strip()
+
+
+def ensure_seeded_indexed(seed_dir: str | Path) -> int:
+    """Index any seed reference doc that isn't already in the index, so the seeded library[]
+    list and the searchable index can't diverge on a fresh deploy (a list pointing at nothing).
+    Idempotent; returns the count newly indexed. Best-effort — the caller logs failures."""
+    seed_path = Path(seed_dir)
+    if not seed_path.is_dir():
+        return 0
+    n = 0
+    for p in sorted(seed_path.glob("*.md")):
+        if get_document_text(p.name) is None:  # not yet indexed
+            index_document(p.name, title_from_filename(p.name), p.read_text(encoding="utf-8"))
+            n += 1
+    return n
 
 
 def search(query: str, top: int = 4) -> str:

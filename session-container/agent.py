@@ -692,10 +692,13 @@ def _build_flow_tools(working_dir: str) -> list:
         target = (workspace_root / filename).resolve()
         if not _path_within_workspace(workspace_root, target) or not target.is_file():
             return f"NOT_FOUND: no session file named '{filename}'. Use list_documents to see what's available."
-        text = target.read_text(encoding="utf-8", errors="replace")
+        try:
+            text = target.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return f"UNSUPPORTED: '{filename}' isn't UTF-8 text — only text/markdown documents can be saved to the Library."
         title = library.title_from_filename(filename)
         try:
-            n_chunks = library.index_document(filename, title, text, source="upload")
+            n_chunks = library.index_document(filename, title, text)
         except RuntimeError as exc:
             return f"LIBRARY_FAILED: {exc}"
         def _mut(data):
@@ -714,7 +717,16 @@ def _build_flow_tools(working_dir: str) -> list:
                 f"SAVED '{filename}' to the Library ({n_chunks} chunks indexed). "
                 "It's now persistent and searchable across all future sessions."
             )
-        return _update(_mut)
+        try:
+            return _update(_mut)
+        except Exception:
+            # Recording the entry failed after indexing — roll back the index write so the
+            # two stores can't drift (chunk searchable but not listed/deletable).
+            try:
+                library.delete_document(filename)
+            except Exception:
+                _logging.getLogger(__name__).error("save_to_library rollback failed for %s", filename, exc_info=True)
+            raise
 
     @define_tool(name="list_library", description="List the documents in the persistent Library (the searchable knowledge base).")
     def list_library(params: ListLibraryParams) -> str:

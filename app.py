@@ -133,6 +133,15 @@ async def lifespan(app: FastAPI):
     session_manager = SessionManager(content_processor)
     await session_manager.start()
 
+    # Ensure the seeded Library reference docs are actually in the Search index, so the
+    # library[] list can't point at content search can't find (idempotent, best-effort).
+    try:
+        seeded = await asyncio.to_thread(library.ensure_seeded_indexed, str(_SC / "seed_docs"))
+        if seeded:
+            logger.info("Indexed %d seed Library doc(s)", seeded)
+    except Exception:
+        logger.warning("Could not index seed Library docs (search may be unconfigured)", exc_info=True)
+
     # Background reminder scheduler — runs due reminders and emails their output.
     import scheduler
     scheduler_task = asyncio.create_task(scheduler.scheduler_loop(session_manager))
@@ -358,10 +367,12 @@ async def save_to_library(session_id: str, req: SaveToLibraryRequest) -> dict:
         if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
             raise HTTPException(status_code=404, detail=f"No session file named '{filename}'")
         raise
-    text = fc.get("content", "")
+    if "content" not in fc:
+        raise HTTPException(status_code=502, detail="Session file content was unavailable")
+    text = fc["content"]
     title = library.title_from_filename(filename)
     try:
-        n_chunks = await asyncio.to_thread(library.index_document, filename, title, text, "upload")
+        n_chunks = await asyncio.to_thread(library.index_document, filename, title, text)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -376,7 +387,16 @@ async def save_to_library(session_id: str, req: SaveToLibraryRequest) -> dict:
                 "id": appdb.new_id("lib", data["library"]),
                 "filename": filename, "title": title, "savedAt": now, "source": "upload",
             })
-    await asyncio.to_thread(appdb.update, _mut)
+    try:
+        await asyncio.to_thread(appdb.update, _mut)
+    except Exception:
+        # Recording the entry failed after indexing — roll back the index write so the two
+        # stores can't drift, then surface the failure.
+        try:
+            await asyncio.to_thread(library.delete_document, filename)
+        except Exception:
+            logger.error("save_to_library rollback failed for %s", filename, exc_info=True)
+        raise HTTPException(status_code=502, detail="Could not record the document in the Library")
     return {"filename": filename, "chunks": n_chunks, "status": "saved"}
 
 
@@ -387,16 +407,18 @@ async def delete_from_library(session_id: str, filename: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
     fn = os.path.basename(filename)
-    try:
-        await asyncio.to_thread(library.delete_document, fn)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
 
+    # Remove from the Cosmos list FIRST: a leftover index chunk is re-deletable, but a phantom
+    # list entry pointing at deleted content is not. (Update aborts cleanly if it's not listed.)
     def _mut(data):
         if appdb.find_library_doc(data, fn) is None:
             raise appdb.AbortWrite(None)
         data["library"] = [d for d in data["library"] if d["filename"] != fn]
     await asyncio.to_thread(appdb.update, _mut)
+    try:
+        await asyncio.to_thread(library.delete_document, fn)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @app.get("/sessions/{session_id}/library/content")
