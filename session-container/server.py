@@ -30,13 +30,21 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import appdb
-from agent import AgentSession, _sse_event
+# Agent backend is selectable so the same session container can run either the
+# GitHub Copilot SDK agent (default) or the standalone LangGraph Deep Agents
+# backend. Both expose an identical AgentSession interface (see agent_deepagents).
+_AGENT_BACKEND = os.getenv("AGENT_BACKEND", "copilot").lower()
+if _AGENT_BACKEND == "deepagents":
+    from agent_deepagents import AgentSession, _sse_event
+else:
+    from agent import AgentSession, _sse_event
 from trace_logging import setup_trace_logging, trace_event
 from tracing import setup_tracing
 from upload_policy import ALLOWED_UPLOAD_EXTENSIONS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.info("Agent backend: %s", _AGENT_BACKEND)
 setup_trace_logging()
 
 # In ACA, this is /workspace. In local dev, default to a directory relative to the project root.
