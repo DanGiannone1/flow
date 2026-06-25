@@ -1,11 +1,11 @@
-# Flow — Product & Design Spec
+# Personal Assistant — Product & Design Spec
 
-Flow is the demo application for the agent-harness accelerator: an AI assistant embedded *inside*
+Personal Assistant is the demo application for the agent-harness accelerator: an AI assistant embedded *inside*
 a real web app that operates the app through tools, rather than chatting beside it. The harness is
-the product; Flow — a small personal-productivity app — is deliberately simple dressing chosen
+the product; Personal Assistant — a small personal-productivity app — is deliberately simple dressing chosen
 because it maps cleanly onto the four capabilities the accelerator exists to demonstrate.
 
-For the system architecture see [architecture.md](architecture.md); for the two agent runtimes see
+For the system architecture see [architecture.md](architecture.md); for the two agent harnesses see
 [harnesses.md](harnesses.md).
 
 ## The four capabilities

@@ -58,7 +58,7 @@ export default function AssistantPanel({ headerActions, onOpenWorkspace }: { hea
             <BespokeIcon icon={Sparkles} size={16} className="text-white" glowColor="rgba(255,255,255,0.4)" />
           </div>
           <div className="flex flex-col leading-tight">
-            <span className="text-text-primary text-[15px]">Flow Assistant</span>
+            <span className="text-text-primary text-[15px]">Assistant</span>
             <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
               {agentWorking ? "Working…" : "Ready"}
             </span>

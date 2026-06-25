@@ -1,6 +1,6 @@
 # System Architecture
 
-Flow is a three-tier system. A Next.js frontend talks to a FastAPI **orchestrator**, which proxies
+Personal Assistant is a three-tier system. A Next.js frontend talks to a FastAPI **orchestrator**, which proxies
 every agent interaction to an isolated **session container** that runs the agent. The orchestrator
 never runs the agent SDK itself — it is a streaming proxy with auth forwarding. This boundary is
 what makes the [agent harness swappable](harnesses.md).

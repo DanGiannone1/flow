@@ -1,6 +1,6 @@
 # Deployment
 
-Flow deploys to Azure Container Apps: the orchestrator and frontend as Container Apps, and the agent
+Personal Assistant deploys to Azure Container Apps: the orchestrator and frontend as Container Apps, and the agent
 as a **custom-container session pool** (one isolated container per user). The runnable source of
 truth is [`infra/deploy.sh`](../infra/deploy.sh) — this page explains its shape and the two failure
 modes that have bitten us.

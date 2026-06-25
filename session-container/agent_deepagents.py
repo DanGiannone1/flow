@@ -1,4 +1,4 @@
-"""Standalone LangGraph **Deep Agents** backend for the Flow session container.
+"""Standalone LangGraph **Deep Agents** backend for the Personal Assistant session container.
 
 This is a drop-in alternative to `agent.AgentSession` (which wraps the GitHub
 Copilot SDK). It exposes the *identical* interface that `server.py` depends on —
@@ -10,15 +10,15 @@ Azure OpenAI instead of the Copilot SDK.
 
 Design notes (see review/ findings doc for the full comparison):
 - **Standalone by choice.** This module shares only `appdb` (the system of record)
-  and the `ag_ui` event protocol with the Copilot path. The Flow tools and system
+  and the `ag_ui` event protocol with the Copilot path. The Personal Assistant tools and system
   prompt are ported here as native LangChain tools so the two backends never
   couple. The cost is duplicated tool logic; the benefit is a clean, independent
   implementation that could run with the Copilot SDK uninstalled.
 - **"Don't over-plan" parity.** The deep-agent harness ships planning (`write_todos`),
   a scratch filesystem (`ls`/`read_file`/`write_file`/…), subagents (`task`) and
-  shell (`execute`). Flow is deliberately a one-direct-tool-call app, so every
+  shell (`execute`). Personal Assistant is deliberately a one-direct-tool-call app, so every
   built-in tool is hidden from the model via `_ToolExclusionMiddleware`. The model
-  sees ONLY the 14 Flow tools — identical surface to the Copilot agent.
+  sees ONLY the 14 Personal Assistant tools — identical surface to the Copilot agent.
 - **Tool-name fidelity.** The frontend keys off exact tool *and* arg names
   (`write_file`/`p.path`, `navigate`/`p.destination`, …). A user tool named
   `write_file` shadows the built-in of the same name (verified: user `tools=` win
@@ -93,7 +93,7 @@ _EXCLUDED_BUILTINS = frozenset(
 # ───────────────────────── System prompt (ported + skills inlined) ──────────
 
 _BASE_PROMPT = """\
-You are the assistant embedded in Flow — a simple personal-productivity app for managing
+You are the assistant embedded in Personal Assistant — a simple personal-productivity app for managing
 **tasks**, a **calendar**, and **documents**. The app has these pages: Home (today's
 agenda — what's due, what's overdue, the next events), To-Do (tasks grouped into buckets,
 each with a status, priority, group, optional due date, and subtasks), Calendar (events —
@@ -138,9 +138,9 @@ Style:
   to Thursday" / "Drafted the project brief").
 - Don't mention tools, routes, file paths, or IDs unless asked. Don't invent data the tools
   didn't return.
-- Stay in your lane: you're the Flow assistant. For clearly off-topic requests (general
+- Stay in your lane: you're this app's assistant. For clearly off-topic requests (general
   trivia, unrelated coding), don't answer at length — briefly redirect ("I'm focused on your
-  Flow workspace — want me to look at your tasks, calendar, or a document?").
+  Personal Assistant workspace — want me to look at your tasks, calendar, or a document?").
 
 ## Playbooks (domain detail)
 
@@ -318,7 +318,7 @@ def _normalize_workspace_text(text: str) -> str:
     return text.strip() + ("\n" if text.strip() else "")
 
 
-# ───────────────────────── Flow tools as LangChain tools ────────────────────
+# ───────────────────────── Personal Assistant tools as LangChain tools ────────────────────
 
 def _build_langchain_tools(working_dir: str) -> list:
     """Port of agent._build_flow_tools as native LangChain tools (same names, args,
@@ -353,7 +353,7 @@ def _build_langchain_tools(working_dir: str) -> list:
             return None, f"AMBIGUOUS event '{ref}': {opts}. Ask which one."
         return matches[0], None
 
-    @tool("navigate", description="Navigate the Flow app to a page, a task, or a calendar event.")
+    @tool("navigate", description="Navigate the Personal Assistant app to a page, a task, or a calendar event.")
     def navigate(destination: str) -> str:
         data = _load()
         result = appdb.resolve_destination(data, destination)

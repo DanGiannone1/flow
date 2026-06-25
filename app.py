@@ -159,7 +159,7 @@ async def lifespan(app: FastAPI):
     logger.info("Application shut down")
 
 
-app = FastAPI(title="Tax Workbench Agent", lifespan=lifespan)
+app = FastAPI(title="Personal Assistant", lifespan=lifespan)
 
 # CORS: allow localhost only in dev, plus configurable FRONTEND_URL for production
 cors_origins = []

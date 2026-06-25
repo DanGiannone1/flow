@@ -10,7 +10,7 @@ interface GlassPanelProps extends HTMLMotionProps<"div"> {
 }
 
 /**
- * The foundational structural atom of the Flow design system.
+ * The foundational structural atom of the Personal Assistant design system.
  * Handles surface backgrounds, backdrop blurs, and subtle borders.
  */
 export default function GlassPanel({

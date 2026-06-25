@@ -1,6 +1,6 @@
 # Retrieval & Document Processing
 
-Flow handles documents in two layers — an ephemeral per-session workspace and a persistent,
+Personal Assistant handles documents in two layers — an ephemeral per-session workspace and a persistent,
 indexed **Library** — and converts uploads to markdown on the way in.
 
 ## Two-tier document model

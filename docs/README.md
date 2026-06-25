@@ -1,4 +1,4 @@
-# Flow Documentation
+# Personal Assistant Documentation
 
 Start with the [top-level README](../README.md) for the overview and quick start. These docs go
 deeper:

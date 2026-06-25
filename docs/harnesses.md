@@ -1,6 +1,6 @@
 # Agent Harnesses
 
-Flow runs the same application on **two interchangeable agent harnesses**. Proving that the
+Personal Assistant runs the same application on **two interchangeable agent harnesses**. Proving that the
 agent runtime is swappable — without touching the orchestrator, the frontend, or the app-state
 store — is a primary goal of the project.
 
@@ -63,7 +63,7 @@ trace pane reflects what actually happened, including ambiguous-navigation candi
 | Model / auth | `provider` dict + bearer token | `AzureChatOpenAI(azure_ad_token=…)` |
 | Multi-turn memory | SDK session | LangGraph `InMemorySaver` checkpointer keyed by `thread_id` |
 
-For Flow's "operate the app, one direct tool call per turn, don't over-plan" design, the two are
+For Personal Assistant's "operate the app, one direct tool call per turn, don't over-plan" design, the two are
 behaviourally equivalent across the core capabilities — verified by an A/B run where both emitted
 the identical six tool calls in the same order with zero planning leakage.
 
@@ -75,19 +75,19 @@ at full parity.
 
 ## The reusable substrate (direction — not yet built)
 
-The harnesses currently each define the Flow tools in their own SDK dialect, and the markdown
+The harnesses currently each define the Personal Assistant tools in their own SDK dialect, and the markdown
 skills are shared files that the Copilot harness loads natively while the Deep Agents harness
 inlines. The intended end state makes the **tools and skills a reusable substrate** that every
 harness taps into:
 
-- **Tools** → a **Flow MCP server** (MCP = Model Context Protocol; the tool logic — navigate,
+- **Tools** → a **Personal Assistant MCP server** (MCP = Model Context Protocol; the tool logic — navigate,
   task/event CRUD, document ops, search — lifted out of the harnesses). Each harness connects as an
   MCP client: the Copilot SDK exposes an `mcp_servers=` parameter, and Deep Agents consumes MCP tools
   via the `langchain-mcp-adapters` package — both support this today.
 - **Skills** → one `skills/*/SKILL.md` directory, loaded by both harnesses (Copilot natively;
   Deep Agents via `SkillsMiddleware`, which speaks the identical SKILL.md format).
 
-The open design question is **per-session context**: Flow tools mutate a specific session's
+The open design question is **per-session context**: Personal Assistant tools mutate a specific session's
 workspace and Cosmos document, so the MCP server must be bound to one session (recommended:
 a stdio MCP server launched per `AgentSession` with the workspace bound via env) rather than
 letting the model pass a session id.

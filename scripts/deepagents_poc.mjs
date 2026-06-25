@@ -1,4 +1,4 @@
-// Deep Agents POC — drives the real Flow frontend as a user against the
+// Deep Agents POC — drives the real Personal Assistant frontend as a user against the
 // AGENT_BACKEND=deepagents session container, screenshots each journey, and
 // reconciles the rendered UI against /app/state. Run: node scripts/deepagents_poc.mjs
 import { chromium } from "@playwright/test";

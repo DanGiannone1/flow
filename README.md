@@ -1,11 +1,11 @@
-# Flow — Agent Harness Accelerator (POC)
+# Personal Assistant — Agent Harness Accelerator (POC)
 
 A proof-of-concept for embedding an AI assistant **inside** a real web app so it can actually
 operate the app — navigate it, create/read/update/delete real records, retrieve over a document
 library, and draft documents — rather than just chat beside it. Every action mutates the real
 application state the UI renders, so the assistant can only claim work it actually did.
 
-**The harness is the product. Flow — a small personal-productivity app — is disposable dressing**
+**The harness is the product. Personal Assistant — a small personal-productivity app — is disposable dressing**
 chosen because it's self-evident to any audience and maps cleanly onto the four capabilities we
 want to prove. (An earlier skin was a tax tracker; the domain was swapped because domain-correctness
 rabbit holes are not the point.)
@@ -14,9 +14,9 @@ See the [documentation](docs/) for the product spec, architecture, and operation
 
 ## What it is
 
-- **Flow** — a mock productivity app: Home (today's agenda), To-Do, Calendar, Documents, Reminders,
+- **Personal Assistant** — a mock productivity app: Home (today's agenda), To-Do, Calendar, Documents, Reminders,
   and an AI Workbench.
-- **Flow Assistant** — an embedded agent that navigates the app and acts on its data through tools.
+- **The assistant** — an embedded agent that navigates the app and acts on its data through tools.
 - Split-screen UI: chat (a docked co-pilot, or the full-screen Workbench) + the live app. Agent
   actions visibly change the app.
 
@@ -45,7 +45,7 @@ end-to-end journeys (navigation, CRUD, documents, RAG); the Schedules and Librar
 Copilot-only today (see [docs/harnesses.md](docs/harnesses.md) for the parity gap and the
 [A/B findings](review/2026-06-24-deepagents-poc/FINDINGS.md)).
 
-> **Direction (not built):** lift the tools into a shared **Flow MCP server** (Model Context
+> **Direction (not built):** lift the tools into a shared **Personal Assistant MCP server** (Model Context
 > Protocol) and load the markdown skills from one place, so every harness taps the same reusable
 > substrate. See [docs/harnesses.md](docs/harnesses.md#the-reusable-substrate-direction--not-yet-built).
 
