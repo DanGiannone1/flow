@@ -1,14 +1,14 @@
-"""Mock Flow application data store for the POC.
+"""Mock Personal Assistant application data store for the POC.
 
 The app state (currentRoute/tasks/events/routes) lives in **Azure Cosmos DB** as ONE
 document for the single owner, keyed by a stable owner id (`COSMOS_OWNER_ID`, default
-`"owner"`) — NOT the ephemeral per-session id. Flow is one person's workspace, so the
+`"owner"`) — NOT the ephemeral per-session id. Personal Assistant is one person's workspace, so the
 same document loads on every visit and survives new tabs, reloads, and restarts.
 Documents/files stay in the per-session workspace folder. The agent's tools read and
 mutate this store and the frontend renders it verbatim via the `/app/state` endpoint,
 so "the agent says it did something" and "the record actually exists" are the same fact.
 
-Flow is a small personal-productivity app. Two record types live here:
+Personal Assistant is a small personal-productivity app. Two record types live here:
 a *Task* (a to-do with a status, priority, group bucket, optional due date, and a list
 of subtasks) and an *Event* (a calendar entry — a meeting, reminder, or focus block on
 a given day). Documents (drafts the assistant writes) live as files in the workspace and
@@ -100,7 +100,7 @@ def _seed_library() -> list[dict]:
 
 
 def _seed() -> dict:
-    """A fresh seeded Flow dataset — a small set of tasks and calendar events."""
+    """A fresh seeded Personal Assistant dataset — a small set of tasks and calendar events."""
     return {
         "currentRoute": "/home",
         # New sessions start empty — tasks and events are created by the user

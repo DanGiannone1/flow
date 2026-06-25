@@ -145,7 +145,7 @@ export default function InputBar({
             onKeyDown={handleKeyDown}
             onFocus={() => setInputFocused(true)}
             onBlur={() => setInputFocused(false)}
-            placeholder="Message Flow Assistant…"
+            placeholder="Message your assistant…"
             disabled={disabled || uploadBusy}
             rows={1}
             className="min-h-10 max-h-52 flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] font-medium leading-relaxed text-var(--color-text-primary) outline-none placeholder-var(--color-text-muted) disabled:opacity-50 font-sans"

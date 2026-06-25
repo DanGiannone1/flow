@@ -30,13 +30,21 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import appdb
-from agent import AgentSession, _sse_event
+# Agent backend is selectable so the same session container can run either the
+# GitHub Copilot SDK agent (default) or the standalone LangGraph Deep Agents
+# backend. Both expose an identical AgentSession interface (see agent_deepagents).
+_AGENT_BACKEND = os.getenv("AGENT_BACKEND", "copilot").lower()
+if _AGENT_BACKEND == "deepagents":
+    from agent_deepagents import AgentSession, _sse_event
+else:
+    from agent import AgentSession, _sse_event
 from trace_logging import setup_trace_logging, trace_event
 from tracing import setup_tracing
 from upload_policy import ALLOWED_UPLOAD_EXTENSIONS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.info("Agent backend: %s", _AGENT_BACKEND)
 setup_trace_logging()
 
 # In ACA, this is /workspace. In local dev, default to a directory relative to the project root.
@@ -44,7 +52,7 @@ _default_ws = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "wor
 WORKSPACE = os.getenv("WORKSPACE", _default_ws)
 UPLOAD_MANIFEST = ".uploaded_files.json"
 _SESSION_ID_RE = re.compile(r"^[0-9a-f]{16}$")
-app = FastAPI(title="Flow Session")
+app = FastAPI(title="Personal Assistant Session")
 setup_tracing(app)
 
 def _normalize_session_id(raw_session_id: str | None) -> str:
@@ -165,7 +173,7 @@ async def create_session(request: Request) -> dict:
 
 @app.get("/app/state")
 async def app_state(request: Request) -> dict:
-    """Return the full Flow application state for this session.
+    """Return the full Personal Assistant application state for this session.
 
     Source of truth is the workspace JSON the agent's tools mutate; seeds lazily
     if missing (e.g. after a reset or orchestrator-probed restore). Returns the

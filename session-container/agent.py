@@ -4,7 +4,7 @@ Provides a streaming async generator interface for running agent turns against
 Azure OpenAI. Translates SDK session events into AG-UI protocol events.
 
 The agent operates on a per-session workspace folder. Application state (the mock
-"Flow" productivity data) lives in a JSON doc in that workspace (see appdb.py); the
+"Personal Assistant" productivity data) lives in a JSON doc in that workspace (see appdb.py); the
 tools read and mutate it, and the frontend renders it via /app/state.
 """
 
@@ -77,7 +77,7 @@ def _trace(event: str, **data) -> None:
 
 
 SYSTEM_PROMPT = """\
-You are the assistant embedded in Flow — a simple personal-productivity app for managing
+You are the assistant embedded in Personal Assistant — a simple personal-productivity app for managing
 **tasks**, a **calendar**, and **documents**. The app has these pages: Home (today's
 agenda — what's due, what's overdue, the next events), To-Do (tasks grouped into buckets,
 each with a status, priority, group, optional due date, and subtasks), Calendar (events —
@@ -133,9 +133,9 @@ Style:
   to Thursday" / "Drafted the project brief").
 - Don't mention tools, routes, file paths, or IDs unless asked. Don't invent data the tools
   didn't return.
-- Stay in your lane: you're the Flow assistant. For clearly off-topic requests (general
+- Stay in your lane: you're this app's assistant. For clearly off-topic requests (general
   trivia, unrelated coding), don't answer at length — briefly redirect ("I'm focused on your
-  Flow workspace — want me to look at your tasks, calendar, or a document?").
+  Personal Assistant workspace — want me to look at your tasks, calendar, or a document?").
 """
 
 
@@ -417,7 +417,7 @@ def _build_flow_tools(working_dir: str) -> list:
             return None, f"AMBIGUOUS event '{ref}': {opts}. Ask which one."
         return matches[0], None
 
-    @define_tool(name="navigate", description="Navigate the Flow app to a page, a task, or a calendar event.")
+    @define_tool(name="navigate", description="Navigate the Personal Assistant app to a page, a task, or a calendar event.")
     def navigate(params: NavigateParams) -> str:
         def _mut(data):
             result = appdb.resolve_destination(data, params.destination)

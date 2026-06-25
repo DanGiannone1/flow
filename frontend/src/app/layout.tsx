@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Flow",
-  description: "Flow — AI assistant for personal productivity",
+  title: "Personal Assistant",
+  description: "Personal Assistant — AI assistant for personal productivity",
   icons: {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },
