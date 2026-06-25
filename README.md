@@ -81,6 +81,7 @@ Open <http://localhost:3000>. Full setup, configuration, and testing: [docs/deve
 
 | Doc | What it covers |
 |---|---|
+| [docs/use-cases.md](docs/use-cases.md) | The core use cases with concrete, runnable examples — start here |
 | [docs/spec.md](docs/spec.md) | Product spec — capabilities, surfaces, data model, tools, skills, theme |
 | [docs/architecture.md](docs/architecture.md) | System design — tiers, the AG-UI/SSE flow, a turn walkthrough, state, security, limitations |
 | [docs/harnesses.md](docs/harnesses.md) | The two agent harnesses, the `AgentSession` seam, parity gap, reusable-substrate direction |

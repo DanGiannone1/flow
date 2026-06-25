@@ -3,6 +3,8 @@
 Start with the [top-level README](../README.md) for the overview and quick start. These docs go
 deeper:
 
+- **[use-cases.md](use-cases.md)** — the core use cases with concrete, runnable examples (manual +
+  assistant path for each capability). Start here to see what it does.
 - **[spec.md](spec.md)** — the product: capabilities, surfaces, data model, agent tools, skills, theme.
 - **[architecture.md](architecture.md)** — the system: tiers, the AG-UI/SSE event flow, session
   lifecycle, state & storage, auth forwarding, the scheduler.

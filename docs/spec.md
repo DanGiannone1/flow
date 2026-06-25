@@ -83,11 +83,14 @@ deterministic `navigate` resolver matches against.
       "id": "s-1",
       "title": "Daily agenda email",
       "prompt": "Summarize my agenda and anything due in the next 3 days",
-      "cadence": "daily"          // run on a cadence; the output is emailed to the user
+      "frequency": "daily",        // daily | weekly (+ daysOfWeek: [Mon=0…Sun=6] for weekly)
+      "time": "08:00",             // HH:MM in `timezone`; the output is emailed on this cadence
+      "timezone": "America/New_York",
+      "enabled": true
     }
   ],
   "library": [
-    { "filename": "Q2-Budget-Overview.md", "title": "Q2 Budget Overview", "source": "library" }
+    { "filename": "Q2-Budget-Overview.md", "title": "Q2 Budget Overview", "source": "reference" }  // reference (seeded) | upload (promoted)
   ]
 }
 ```
@@ -158,6 +161,8 @@ assistant view on narrow viewports.
 
 ## Non-goals
 
-- No real auth, no multi-user — a per-session sandbox only.
+- No real auth, no multi-user — a single-owner workspace (app state persists in Cosmos under a
+  stable owner key; chat history and uploaded session files stay per-session). Multi-user = swap the
+  owner key for the Entra `oid`.
 - Synthetic-but-realistic seed data only; no real personal or client data in the repo.
 - No new architectural abstractions for the demo skin — reskin within the existing harness.

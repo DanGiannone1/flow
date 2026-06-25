@@ -6,6 +6,14 @@
 - **Node 20+** with `npm` (Next.js 16 requires Node ≥ 20.9)
 - **Azure CLI** signed in (`az login`) — app state lives in Cosmos DB (AAD-only) and the agent
   calls Azure OpenAI; both authenticate via `DefaultAzureCredential` locally
+- **AAD data-plane roles on your signed-in principal** — `az login` alone is not enough. Without
+  these you'll boot but get `403 Forbidden` on the first request:
+  - **Cosmos DB Built-in Data Contributor** on the Cosmos account (required — app state)
+  - **Cognitive Services User** on the Azure OpenAI/Foundry resource (the agent)
+  - For optional RAG: today the Library uses the Search **admin key** (`AZURE_SEARCH_KEY`); a
+    managed-identity path is a known follow-up (see [deployment.md](deployment.md))
+  - Also ensure the Cosmos account's **network firewall allows your IP** (`publicNetworkAccess`
+    enabled, or your IP in the allow-list) — a blocked IP surfaces as the same `403`
 - A `.env` file at the repo root (`cp .env.example .env`)
 
 The repo is **two independent `uv` projects**: the root (orchestrator) and `session-container/`,
